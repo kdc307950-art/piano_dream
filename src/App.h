@@ -174,6 +174,9 @@ private:
     int         windowWidth_ = 1520;
     int         windowHeight_ = 1000;
     float       dpiScale_ = 1.0f;
+    float       fontScale_ = 1.0f;
+    float       fontScaleTimer_ = 0.0f;
+    std::vector<std::string> fontSamples_;
     float       viewScale_ = 1.0f;
     Vector2     viewOffset_{};
 };

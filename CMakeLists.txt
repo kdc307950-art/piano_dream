@@ -77,6 +77,9 @@ add_executable(piano     $<TARGET_OBJECTS:piano_objs>)
 add_executable(piano-cli $<TARGET_OBJECTS:piano_objs>)
 
 if(WIN32)
+    enable_language(RC)
+    target_sources(piano PRIVATE resources/app.rc)
+    target_sources(piano-cli PRIVATE resources/app.rc)
     # WIN32_EXECUTABLE = TRUE 等价于给链接器加 -mwindows
     set_target_properties(piano PROPERTIES WIN32_EXECUTABLE TRUE)
 endif()

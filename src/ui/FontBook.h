@@ -16,7 +16,7 @@ namespace piano {
 class FontBook {
 public:
     /// 依据传入的所有界面字符串收集码点并加载字体。
-    bool load(const std::vector<std::string>& samples);
+    bool load(const std::vector<std::string>& samples, float rasterScale = 1.0f);
     void unload();
 
     const Font& title() const noexcept { return title_; }

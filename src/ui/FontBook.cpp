@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <cmath>
 #include <fstream>
 #include <iterator>
 #include <set>
@@ -125,7 +126,7 @@ void FontBook::collectCodepoints(const std::string& utf8, std::vector<int>& out)
     }
 }
 
-bool FontBook::load(const std::vector<std::string>& samples) {
+bool FontBook::load(const std::vector<std::string>& samples, float rasterScale) {
     unload();
 
     // 1) 收集界面实际用到的全部码点
@@ -174,7 +175,7 @@ bool FontBook::load(const std::vector<std::string>& samples) {
         if (dataSize <= 0) continue;
 
         const Font t = LoadFontFromMemory(".ttf", data, dataSize,
-                                          static_cast<int>(kTitleSize),
+                                          static_cast<int>(std::lround(kTitleSize * rasterScale)),
                                           codepoints.data(), static_cast<int>(codepoints.size()));
 
         // 关键校验：raylib 只会为「字体里确实存在」的码点生成字形，其余静默丢弃
@@ -197,9 +198,9 @@ bool FontBook::load(const std::vector<std::string>& samples) {
         }
 
         title_ = t;
-        body_  = LoadFontFromMemory(".ttf", data, dataSize, static_cast<int>(kBodySize),
+        body_  = LoadFontFromMemory(".ttf", data, dataSize, static_cast<int>(std::lround(kBodySize * rasterScale)),
                                     codepoints.data(), static_cast<int>(codepoints.size()));
-        small_ = LoadFontFromMemory(".ttf", data, dataSize, static_cast<int>(kSmallSize),
+        small_ = LoadFontFromMemory(".ttf", data, dataSize, static_cast<int>(std::lround(kSmallSize * rasterScale)),
                                     codepoints.data(), static_cast<int>(codepoints.size()));
         if (!IsFontValid(body_) || !IsFontValid(small_) ||
             body_.texture.id == def.texture.id || small_.texture.id == def.texture.id) {

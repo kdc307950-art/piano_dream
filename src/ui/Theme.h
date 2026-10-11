@@ -23,8 +23,8 @@ inline constexpr Color kPanelBot  = {  14,  21,  32, 255 };
 inline constexpr Color kLine      = {  43,  54,  71, 255 };
 inline constexpr Color kLineSoft  = {  53,  66,  83, 255 };
 inline constexpr Color kInk       = { 233, 237, 244, 255 };
-inline constexpr Color kMuted     = { 140, 154, 173, 255 };
-inline constexpr Color kMutedDim  = { 104, 118, 138, 255 };
+inline constexpr Color kMuted     = { 154, 165, 181, 255 };
+inline constexpr Color kMutedDim  = { 154, 165, 181, 255 };
 inline constexpr Color kGold      = { 215, 173, 104, 255 };
 inline constexpr Color kGoldLight = { 246, 210, 150, 255 };
 inline constexpr Color kGoldDeep  = { 201, 155,  89, 255 };
@@ -67,7 +67,7 @@ struct UiLayout {
     Rectangle footer{};
 
     // 琴键尺寸
-    float keyW   = 38.0f;
+    float keyW   = 26.0f;
     float keyH   = 220.0f;
     float blackW = 24.0f;
     float blackH = 139.0f;
@@ -81,12 +81,12 @@ struct UiLayout {
         hero   = { margin, 60.0f, w - margin * 2.0f, 58.0f };
 
         const float consoleTop    = 140.0f;
-        const float contentH      = std::min(h, 1000.0f);
+        const float contentH      = std::min(h, 1200.0f);
         const float consoleBottom = contentH - 112.0f;
         console = { margin, consoleTop, w - margin * 2.0f, consoleBottom - consoleTop };
 
         const float pad = 20.0f;
-        const float cw  = std::min(console.width - pad * 2.0f, 1440.0f);
+        const float cw  = std::min(console.width - pad * 2.0f, 1600.0f);
         const float x   = console.x + (console.width - cw) * 0.5f;
         float y = console.y + 14.0f;
 
@@ -98,7 +98,7 @@ struct UiLayout {
         const float avail = console.y + console.height - 14.0f - y - below;
         keyH   = std::clamp(avail, 150.0f, 300.0f);
         blackH = keyH * 0.633f;
-        keyW   = 38.0f;
+        keyW   = std::clamp(cw / 52.0f, 14.0f, 32.0f);
         blackW = keyW * 0.636f;
 
         keys   = { x, y, cw, keyH };  y += keyH + 8.0f;
@@ -107,8 +107,8 @@ struct UiLayout {
         timeline  = { x, y, cw, 4.0f };  y += 12.0f;
         song      = { x, y, cw, std::max(60.0f, console.y + console.height - 14.0f - y) };
 
-        const float lowerW = std::min(w - margin * 2.0f, 1440.0f);
-        const float lowerX = margin + (w - margin * 2.0f - lowerW) * 0.5f;
+        const float lowerW = cw;
+        const float lowerX = x;
         guide  = { lowerX, consoleBottom + 10.0f, lowerW, 84.0f };
         footer = { lowerX, guide.y + guide.height + 2.0f, lowerW, 16.0f };
     }

@@ -43,6 +43,12 @@ int main(int argc, char** argv) {
             capturePlay = true;
         } else if (a == "--frames" && i + 1 < argc) {
             captureFrames = std::atoi(argv[++i]);
+        } else if (a == "--size" && i + 1 < argc) {
+            const std::string size = argv[++i];
+            const auto separator = size.find('x');
+            if (separator == std::string::npos) return 2;
+            windowWidth = std::atoi(size.substr(0, separator).c_str());
+            windowHeight = std::atoi(size.substr(separator + 1).c_str());
         } else if (a == "--width" && i + 1 < argc) {
             windowWidth = std::atoi(argv[++i]);
         } else if (a == "--height" && i + 1 < argc) {

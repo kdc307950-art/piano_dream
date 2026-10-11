@@ -88,6 +88,9 @@ bool App::init(std::string* log) {
     anchorWorkingDirectoryToExecutable();
     SetTraceLogLevel(LOG_WARNING);
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT | FLAG_VSYNC_HINT);
+#ifdef __APPLE__
+    SetConfigFlags(FLAG_WINDOW_HIGHDPI);
+#endif
     InitWindow(windowWidth_, windowHeight_, ui::t(ui::kWindowTitle));
     SetWindowMinSize(1100, 880);
     SetTargetFPS(60);
@@ -123,7 +126,9 @@ bool App::init(std::string* log) {
         fontSamples.emplace_back(s);
     for (std::size_t i = 0; i < ui_generated::kSourceStringCount; ++i)
         fontSamples.emplace_back(ui_generated::kSourceStrings[i]);
-    fonts_.load(fontSamples);
+    fontSamples_ = fontSamples;
+    fontScale_ = std::max(1.0f, static_cast<float>(GetRenderWidth()) / GetScreenWidth());
+    fonts_.load(fontSamples_, fontScale_);
     ui_.fonts = &fonts_;
 
     // ---- 采样音色（可选） ----
@@ -424,6 +429,16 @@ void App::handleInput(float dt) {
 // ===========================================================================
 
 void App::draw(float dt) {
+    // 使用实际 framebuffer 比例，避免将系统 DPI 再乘进逻辑坐标。
+    const float rasterScale = std::max(1.0f, static_cast<float>(GetRenderWidth()) / GetScreenWidth());
+    if (std::fabs(rasterScale - fontScale_) > 0.01f) {
+        fontScaleTimer_ += dt;
+        if (fontScaleTimer_ >= 0.15f) {
+            fonts_.load(fontSamples_, rasterScale);
+            fontScale_ = rasterScale;
+            fontScaleTimer_ = 0.0f;
+        }
+    } else fontScaleTimer_ = 0.0f;
     layout_.compute(static_cast<float>(GetScreenWidth()), static_cast<float>(GetScreenHeight()));
     pianoView_.setLayout(layout_);
 
