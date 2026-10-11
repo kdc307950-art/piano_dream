@@ -78,9 +78,9 @@ struct UiLayout {
 
         const float margin = 24.0f;
         topbar = { margin, 12.0f, w - margin * 2.0f, 44.0f };
-        hero   = { margin, 60.0f, w - margin * 2.0f, 58.0f };
+        hero   = { margin, 60.0f, w - margin * 2.0f, 26.0f };
 
-        const float consoleTop    = 140.0f;
+        const float consoleTop    = 96.0f;
         const float contentH      = std::min(h, 1200.0f);
         const float consoleBottom = contentH - 112.0f;
         console = { margin, consoleTop, w - margin * 2.0f, consoleBottom - consoleTop };
@@ -105,7 +105,7 @@ struct UiLayout {
         bottom = { x, y, cw, 26.0f }; y += 34.0f;
         transport = { x, y, cw, 42.0f }; y += 50.0f;
         timeline  = { x, y, cw, 4.0f };  y += 12.0f;
-        song      = { x, y, cw, std::max(60.0f, console.y + console.height - 14.0f - y) };
+        song      = { x, y, cw, std::clamp(console.y + console.height - 14.0f - y, 150.0f, 220.0f) };
 
         const float lowerW = cw;
         const float lowerX = x;

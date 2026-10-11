@@ -516,32 +516,23 @@ void App::drawTopbar() {
 void App::drawHero() {
     const Rectangle& r = layout_.hero;
 
-    fonts_.drawSmall(ui::t(ui::kEyebrow), r.x, r.y, theme::kGold);
-    const float x1 = r.x;
-    const float y1 = r.y + 16.0f;
-    fonts_.drawTitle(ui::t(ui::kHeroLine1), x1, y1, theme::kInk);
-    fonts_.drawTitle(ui::t(ui::kHeroAccent), x1 + fonts_.titleWidth(ui::t(ui::kHeroLine1)) + 4.0f, y1, theme::kGoldLight);
-    fonts_.drawSmall(ui::t(ui::kHeroDesc), x1, y1 + 38.0f, Color{ 158, 172, 189, 255 });
+    // 常态头部保持一行，把纵向空间留给琴键；大标题只在空状态提示中显示。
+    fonts_.drawSmall(ui::t(ui::kEyebrow), r.x, r.y + 4.0f, theme::kGold);
+    const float eyebrowW = fonts_.smallWidth(ui::t(ui::kEyebrow));
+    fonts_.drawSmall(ui::t(ui::kHeroDesc), r.x + eyebrowW + 18.0f, r.y + 4.0f,
+                     Color{ 158, 172, 189, 255 });
 
-    // 右侧电平波形
-    const Rectangle scope{ r.x + r.width - 320.0f, r.y + 12.0f, 300.0f, 46.0f };
-    if (!scope_.empty()) {
-        const float step = scope.width / static_cast<float>(scope_.size());
-        const float mid = scope.y + scope.height * 0.55f;
-        for (std::size_t i = 0; i < scope_.size(); ++i) {
-            const float v = std::clamp(scope_[i], 0.0f, 1.0f);
-            const float h = std::max(1.0f, v * scope.height * 0.82f);
-            const float x = scope.x + static_cast<float>(i) * step;
-            const Color c = Color{ static_cast<unsigned char>(181 + 60 * v),
-                                   static_cast<unsigned char>(139 + 80 * v),
-                                   static_cast<unsigned char>(84 + 70 * v), 230 };
-            DrawRectangle(static_cast<int>(x), static_cast<int>(mid - h * 0.5f),
-                          1, static_cast<int>(h), c);
-        }
-        DrawLineEx({ scope.x, scope.y + scope.height }, { scope.x + scope.width, scope.y + scope.height },
-                   1.0f, Color{ 58, 65, 80, 255 });
-        fonts_.drawSmall(ui::t(ui::kLiveSound), scope.x + scope.width - 62.0f, scope.y - 12.0f,
-                         Color{ 111, 128, 149, 255 });
+    // 六段真实电平表：历史峰值来自音频线程的 atomic peakLevel()。
+    const Rectangle meter{ r.x + r.width - 220.0f, r.y + 5.0f, 220.0f, 14.0f };
+    fonts_.drawSmall(ui::t(ui::kLiveSound), meter.x - 70.0f, meter.y + 1.0f, theme::kMuted);
+    for (int i = 0; i < 6; ++i) {
+        const std::size_t sample = scope_.empty() ? 0 :
+            std::min(scope_.size() - 1, scope_.size() - 1 - static_cast<std::size_t>(i * 4));
+        const float level = scope_.empty() ? mixer_.peakLevel() : std::clamp(scope_[sample], 0.0f, 1.0f);
+        const float x = meter.x + static_cast<float>(i) * 35.0f;
+        const Color c = i >= 5 ? theme::kWarn : (i >= 4 ? theme::kGold : theme::kGood);
+        DrawRectangleRounded({ x, meter.y, 29.0f, meter.height }, 0.25f, 4,
+                              level > static_cast<float>(i + 1) / 6.0f ? c : Color{ 45, 57, 73, 255 });
     }
 }
 
@@ -741,6 +732,20 @@ void App::drawSongPanel() {
     const Rectangle& r = layout_.song;
     const bool compact = r.width < 1200.0f;
     widget::panel(r, Color{ 13, 23, 36, 255 }, theme::kLine, 0.06f);
+
+    if (songs_.empty() || songView_.empty()) {
+        // 无曲目时保持固定高度，避免拖放提示把整页撑开。
+        const Rectangle drop{ r.x + 18.0f, r.y + 12.0f, r.width - 36.0f,
+                              std::min(104.0f, r.height - 24.0f) };
+        widget::panel(drop, Color{ 20, 31, 46, 180 }, theme::kLineSoft, 0.16f);
+        const char* title = ui::t(ui::kHeroLine1);
+        const float tw = fonts_.bodyWidth(title);
+        fonts_.drawBody(title, drop.x + (drop.width - tw) * 0.5f, drop.y + 20.0f, theme::kInk);
+        const char* hint = ui::t(ui::kImportHint);
+        const float hw = fonts_.smallWidth(hint);
+        fonts_.drawSmall(hint, drop.x + (drop.width - hw) * 0.5f, drop.y + 56.0f, theme::kMuted);
+        return;
+    }
 
     const float x = r.x + 14.0f;
     float y = r.y + 8.0f;
