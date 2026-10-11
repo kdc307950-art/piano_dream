@@ -1,8 +1,8 @@
 # ============================================================================
 # Grand Studio · C++ 88 键钢琴模拟器
 #
-# 说明：Windows 的便携构建优先使用 third_party/ 下的 raylib 静态库；
-#       其他平台或缺少该库时，CMake 自动从 raylib 6.0 源码构建。
+# 说明：所有平台统一从 raylib 6.0 源码构建，避免把某个平台的静态库
+#       （例如 Windows COFF）误用于 Linux 或 macOS。
 #
 # 用法：
 #   cmake -S . -B build -G "MinGW Makefiles"
@@ -13,7 +13,6 @@ cmake_minimum_required(VERSION 3.16)
 
 project(GrandStudioPiano VERSION 1.0 LANGUAGES CXX)
 
-option(PIANO_FETCH_RAYLIB "Fetch raylib 6.0 when no local library is available" ON)
 option(PIANO_TSAN "Build with ThreadSanitizer" OFF)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -39,27 +38,19 @@ target_include_directories(piano_objs PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/miniaudio")
 
 # --------------------------------------------------------------------- raylib
-find_library(RAYLIB_LIB
-    NAMES raylib libraylib.a
-    PATHS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/raylib/lib"
-    NO_DEFAULT_PATH)
-
-if(RAYLIB_LIB)
-    add_library(piano_raylib UNKNOWN IMPORTED)
-    set_target_properties(piano_raylib PROPERTIES IMPORTED_LOCATION "${RAYLIB_LIB}")
-    set(PIANO_RAYLIB_TARGET piano_raylib)
-elseif(PIANO_FETCH_RAYLIB)
-    include(FetchContent)
-    set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-    set(BUILD_GAMES    OFF CACHE BOOL "" FORCE)
-    set(PLATFORM "Desktop" CACHE STRING "" FORCE)
-    FetchContent_Declare(raylib
-        URL https://github.com/raysan5/raylib/archive/refs/tags/6.0.tar.gz)
-    FetchContent_MakeAvailable(raylib)
-    set(PIANO_RAYLIB_TARGET raylib)
-else()
-    message(FATAL_ERROR "找不到 raylib；请启用 PIANO_FETCH_RAYLIB 或提供本地静态库。")
+include(FetchContent)
+set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(BUILD_GAMES    OFF CACHE BOOL "" FORCE)
+set(PLATFORM "Desktop" CACHE STRING "" FORCE)
+if(UNIX AND NOT APPLE)
+    # raylib 的 GLFW 后端在 Linux 同时编译 X11 与 Wayland，运行时由 GLFW 选择。
+    set(GLFW_BUILD_X11 ON CACHE BOOL "" FORCE)
+    set(GLFW_BUILD_WAYLAND ON CACHE BOOL "" FORCE)
 endif()
+FetchContent_Declare(raylib
+    URL https://github.com/raysan5/raylib/archive/refs/tags/6.0.tar.gz)
+FetchContent_MakeAvailable(raylib)
+set(PIANO_RAYLIB_TARGET raylib)
 
 # ------------------------------------------------------- 两个可执行文件
 #
@@ -130,5 +121,5 @@ set_target_properties(piano piano-cli PROPERTIES
 enable_testing()
 add_test(NAME piano_selftest COMMAND piano-cli --selftest)
 
-message(STATUS "Grand Studio Piano · raylib = ${RAYLIB_LIB}")
+message(STATUS "Grand Studio Piano · raylib = FetchContent 6.0")
 message(STATUS "  产物：piano.exe (GUI，双击玩) / piano-cli.exe (控制台，--selftest)")

@@ -27,6 +27,12 @@ struct UiContext {
     Vector2 offset{};
     int  draggingSlider = 0;      // 0 = 无
     bool consumedClick = false;   // 本帧点击是否已被某个控件吃掉
+    struct DeferredDropdown {
+        Rectangle list{};
+        std::vector<std::string> items;
+        int index = -1;
+    };
+    std::vector<DeferredDropdown> deferredDropdowns;
 
     void beginFrame() {
         const Vector2 rawMouse = GetMousePosition();
@@ -36,6 +42,7 @@ struct UiContext {
         mouseReleased = IsMouseButtonReleased(MOUSE_BUTTON_LEFT);
         mouseDown     = IsMouseButtonDown(MOUSE_BUTTON_LEFT);
         consumedClick = false;
+        deferredDropdowns.clear();
         if (mouseReleased) draggingSlider = 0;
     }
 
@@ -232,8 +239,30 @@ inline bool dropdown(UiContext& ui, int id, Rectangle r, const std::vector<std::
             open = false;
             ui.consumedClick = true;
         }
+        // 记录一份副本，在整帧其它面板绘制完后再次绘制，确保菜单浮在琴键
+        // 和说明卡之上。交互仍在这里处理，避免改变即时模式控件的时序。
+        ui.deferredDropdowns.push_back({ list, items, index });
     }
     return changed;
+}
+
+inline void drawDeferredDropdowns(UiContext& ui) {
+    for (const auto& dd : ui.deferredDropdowns) {
+        DrawRectangleRounded(dd.list, 0.08f, 6, Color{ 17, 26, 39, 252 });
+        DrawRectangleRoundedLinesEx(dd.list, 0.08f, 6, 1.0f, theme::kLineSoft);
+        constexpr float rowH = 26.0f;
+        for (std::size_t i = 0; i < dd.items.size(); ++i) {
+            const Rectangle row{ dd.list.x + 4.0f, dd.list.y + 4.0f + rowH * static_cast<float>(i),
+                                 dd.list.width - 8.0f, rowH };
+            const bool rowHover = ui.hovered(row);
+            if (rowHover) DrawRectangleRounded(row, 0.2f, 4, Color{ 36, 50, 71, 255 });
+            if (ui.fonts) {
+                const bool sel = static_cast<int>(i) == dd.index;
+                ui.fonts->drawSmall(dd.items[i].c_str(), row.x + 8.0f, row.y + 7.0f,
+                                    sel ? theme::kGoldLight : theme::kInk);
+            }
+        }
+    }
 }
 
 inline void text(UiContext& ui, const char* s, float x, float y, Color c, bool small = true) {

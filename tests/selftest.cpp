@@ -280,6 +280,16 @@ void testMidiInputQueue() {
         queue.push({});
     check(queue.dropped() == 1, "队列满时丢弃并计数，不影响已入队事件");
 
+    MidiInputQueue releaseQueue;
+    for (std::size_t i = 0; i < MidiInputQueue::kCapacity; ++i)
+        releaseQueue.push({ { MidiInputType::NoteOn, 0, 60, 100 }, 0.0 });
+    check(releaseQueue.push({ { MidiInputType::NoteOff, 0, 60, 0 }, 1.0 }),
+          "队列满时 NoteOff 不丢弃");
+    std::vector<TimedMidiInputEvent> releaseDrain;
+    releaseQueue.drain(releaseDrain);
+    check(!releaseDrain.empty() && releaseDrain.back().event.type == MidiInputType::NoteOff,
+          "队列满后仍能取到 NoteOff");
+
     MidiInputClock clock(48000.0);
     clock.reset(1000, 10.0);
     check(clock.toFrame(10.5) == 25000 && clock.toFrame(9.0) == 1000,
@@ -287,17 +297,20 @@ void testMidiInputQueue() {
 
     Song song;
     song.bpm = 120; song.ppq = 480;
-    song.events.push_back(NoteEvent{ 480, 240, 60, 100, 0, 0 });
+    song.events.push_back(NoteEvent{ 960, 240, 64, 100, 0, 0 });
+    song.events.push_back(NoteEvent{ 480, 240, 60, 100, 0, 0 }); // 故意逆序，验证入队前排序
     MidiInputQueue virtualQueue;
-    check(enqueueVirtualMidiSong(song, virtualQueue, 2.0) == 2,
+    check(enqueueVirtualMidiSong(song, virtualQueue, 2.0) == 4,
           "虚拟 MIDI 曲目写入同一输入队列");
     drained.clear();
     virtualQueue.drain(drained);
     MidiInputClock virtualClock(48000.0);
     virtualClock.reset(0, 2.0);
-    check(drained.size() == 2 && virtualClock.toFrame(drained[0].timestampSeconds) == 24000 &&
+    check(drained.size() == 4 && drained[0].event.type == MidiInputType::NoteOn &&
+          drained[0].event.note == 60 && virtualClock.toFrame(drained[0].timestampSeconds) == 24000 &&
+          drained[1].event.type == MidiInputType::NoteOff &&
           virtualClock.toFrame(drained[1].timestampSeconds) == 36000,
-          "虚拟 MIDI 事件时间戳可回放到音频帧");
+          "虚拟 MIDI 事件按时间排序并可回放到音频帧");
 }
 
 void testLanguageTable() {

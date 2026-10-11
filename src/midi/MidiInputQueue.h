@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <algorithm>
 #include <mutex>
 #include <vector>
 
@@ -23,7 +24,20 @@ public:
 
     bool push(const TimedMidiInputEvent& event) {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (events_.size() >= kCapacity) { ++dropped_; return false; }
+        if (events_.size() >= kCapacity) {
+            const bool critical = event.event.type == MidiInputType::NoteOff ||
+                                  event.event.type == MidiInputType::AllNotesOff ||
+                                  event.event.type == MidiInputType::Sustain;
+            if (!critical) { ++dropped_; return false; }
+            // 释放事件优先：先丢一个 NoteOn；若队列全是控制事件，清空旧事件
+            // 后仍要把当前 NoteOff 送入下游，避免挂音。
+            auto it = std::find_if(events_.begin(), events_.end(), [](const auto& e) {
+                return e.event.type == MidiInputType::NoteOn;
+            });
+            if (it != events_.end()) events_.erase(it);
+            else events_.clear();
+            ++dropped_;
+        }
         events_.push_back(event);
         return true;
     }

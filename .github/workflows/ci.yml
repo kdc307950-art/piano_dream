@@ -32,18 +32,18 @@ jobs:
       - name: Install desktop dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake g++ libgl1-mesa-dev libx11-dev libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev xvfb
+          sudo apt-get install -y cmake g++ libgl1-mesa-dev libx11-dev libwayland-dev libxkbcommon-dev libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev xvfb
       - name: Check generated glyphs
         run: python3 tools/generate_glyphs.py --check
       - name: Configure and build
-        run: cmake -S . -B build-ci -DCMAKE_BUILD_TYPE=Release -DPIANO_FETCH_RAYLIB=ON
+        run: cmake -S . -B build-ci -DCMAKE_BUILD_TYPE=Release
       - name: Build
         run: cmake --build build-ci --parallel
       - name: Selftest
         run: ./piano-cli --selftest
       - name: ThreadSanitizer configure and build
         if: matrix.os == 'ubuntu-22.04'
-        run: cmake -S . -B build-tsan -DCMAKE_BUILD_TYPE=Debug -DPIANO_FETCH_RAYLIB=ON -DPIANO_TSAN=ON
+        run: cmake -S . -B build-tsan -DCMAKE_BUILD_TYPE=Debug -DPIANO_TSAN=ON
       - name: ThreadSanitizer build
         if: matrix.os == 'ubuntu-22.04'
         run: cmake --build build-tsan --parallel
@@ -69,7 +69,6 @@ jobs:
           cmake -S . -B build-ci -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
             -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch }} \
-            -DPIANO_FETCH_RAYLIB=ON
           cmake --build build-ci --parallel
       - name: Selftest
         run: ./piano-cli --selftest

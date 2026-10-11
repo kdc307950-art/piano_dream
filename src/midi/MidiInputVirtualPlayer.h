@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <vector>
 
 #include "core/Song.h"
 #include "midi/MidiInputQueue.h"
@@ -14,13 +15,24 @@ inline std::size_t enqueueVirtualMidiSong(const Song& song, MidiInputQueue& queu
                                           double startTimestampSeconds = 0.0) {
     if (song.ppq <= 0 || song.bpm <= 0) return 0;
     const double secondsPerTick = 60.0 / (static_cast<double>(song.bpm) * song.ppq);
-    std::size_t pushed = 0;
+    struct Pending {
+        TimedMidiInputEvent event;
+        bool operator<(const Pending& other) const noexcept {
+            return event.timestampSeconds < other.event.timestampSeconds;
+        }
+    };
+    std::vector<Pending> pending;
+    pending.reserve(song.events.size() * 2);
     for (const auto& note : song.events) {
         const double on = startTimestampSeconds + note.tick * secondsPerTick;
         const double off = startTimestampSeconds + note.endTick() * secondsPerTick;
-        if (queue.push({ { MidiInputType::NoteOn, note.channel, note.note, note.velocity }, on })) ++pushed;
-        if (queue.push({ { MidiInputType::NoteOff, note.channel, note.note, 0 }, off })) ++pushed;
+        pending.push_back({ { { MidiInputType::NoteOn, note.channel, note.note, note.velocity }, on } });
+        pending.push_back({ { { MidiInputType::NoteOff, note.channel, note.note, 0 }, off } });
     }
+    std::stable_sort(pending.begin(), pending.end());
+    std::size_t pushed = 0;
+    for (const auto& e : pending)
+        if (queue.push(e.event)) ++pushed;
     return pushed;
 }
 

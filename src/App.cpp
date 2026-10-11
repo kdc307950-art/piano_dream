@@ -440,6 +440,7 @@ void App::draw(float dt) {
     drawConsole();
     drawGuide();
     drawFooter();
+    widget::drawDeferredDropdowns(ui_);
     drawOverlays();
 
     EndDrawing();
