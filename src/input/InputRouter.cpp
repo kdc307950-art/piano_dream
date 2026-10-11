@@ -158,7 +158,7 @@ void InputRouter::update() {
         seen.reserve(static_cast<std::size_t>(touchCount));
 
         for (int i = 0; i < touchCount; ++i) {
-            const int id = kTouchPointerBase + i;
+            const int id = kTouchPointerBase + GetTouchPointId(i);
             seen.push_back(id);
             if (!hitTest_) continue;
 

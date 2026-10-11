@@ -66,14 +66,14 @@ public:
 
     // ---------------- 参数 ----------------
 
-    void setMasterVolume(float v) noexcept { masterVol_ = clampf(v, 0.0f, 2.0f); }
-    float masterVolume() const noexcept { return masterVol_; }
+    void setMasterVolume(float v) noexcept { masterVol_.store(clampf(v, 0.0f, 2.0f), std::memory_order_relaxed); }
+    float masterVolume() const noexcept { return masterVol_.load(std::memory_order_relaxed); }
 
     void setReverbMix(float v) noexcept { reverb_.setMix(v); }
     float reverbMix() const noexcept { return reverb_.mix(); }
 
-    void setEngineMode(EngineMode m) noexcept { engineMode_ = m; }
-    EngineMode engineMode() const noexcept { return engineMode_; }
+    void setEngineMode(EngineMode m) noexcept { engineMode_.store(m, std::memory_order_relaxed); }
+    EngineMode engineMode() const noexcept { return engineMode_.load(std::memory_order_relaxed); }
 
     void setSampleBank(const SampleBank* bank) noexcept { bank_ = bank; }
     const SampleBank* sampleBank() const noexcept { return bank_; }
@@ -167,8 +167,8 @@ private:
     // UI 高亮计数（与音频线程无强一致性要求，仅用于显示）
     std::array<std::atomic<int>, 128> visual_{};
 
-    float masterVol_ = 0.75f;
-    EngineMode engineMode_ = EngineMode::Auto;
+    std::atomic<float> masterVol_{0.75f};
+    std::atomic<EngineMode> engineMode_{EngineMode::Auto};
 };
 
 } // namespace piano

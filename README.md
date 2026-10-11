@@ -57,6 +57,8 @@ cd "C:\Users\孔德草\Desktop\游戏开发\钢琴模拟器\piano"
 
 也可以**直接双击 `build.cmd`**（等价于不带参数运行，编译完会停住等你按键）。
 
+构建前会自动扫描 `src/` 下的 C++ 字符串字面量并更新 `src/ui/GeneratedGlyphs.h`，确保运行时错误信息和状态文字也进入字形图集。可用 `python tools/generate_glyphs.py --check` 检查生成文件是否过期。
+
 `build.cmd` 内部已经带了 `-ExecutionPolicy Bypass`，
 所以**不需要改任何系统设置**就能用。
 
@@ -499,3 +501,5 @@ tick 480 的音符必须在**第 24000 帧**触发，第 23999 帧不能触发�
 - **更细的力度曲线**：目前是线性映射，可换成 `velocity^k` 或分段曲线
 - **曲目编辑**：`Song` 已是纯数据，配一个网格编辑器即可
 - **录音落盘**：`writeRecordingMidi` 已经在写文件，加个工程文件格式很容易
+
+\n

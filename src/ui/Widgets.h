@@ -23,11 +23,15 @@ struct UiContext {
     bool mousePressed = false;
     bool mouseReleased = false;
     const FontBook* fonts = nullptr;
+    float scale = 1.0f;
+    Vector2 offset{};
     int  draggingSlider = 0;      // 0 = 无
     bool consumedClick = false;   // 本帧点击是否已被某个控件吃掉
 
     void beginFrame() {
-        mouse = GetMousePosition();
+        const Vector2 rawMouse = GetMousePosition();
+        mouse = { (rawMouse.x - offset.x) / std::max(1.0f, scale),
+                  (rawMouse.y - offset.y) / std::max(1.0f, scale) };
         mousePressed  = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
         mouseReleased = IsMouseButtonReleased(MOUSE_BUTTON_LEFT);
         mouseDown     = IsMouseButtonDown(MOUSE_BUTTON_LEFT);

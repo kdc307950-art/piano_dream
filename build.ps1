@@ -104,6 +104,12 @@ foreach ($f in @('third_party\raylib\include\raylib.h',
 }
 
 # --------------------------------------------------------------------- 准备
+if (Get-Command python -ErrorAction SilentlyContinue) {
+    & python tools/generate_glyphs.py
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    & python tools/generate_glyphs.py --check
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
 if ($Clean -and (Test-Path 'build')) { Remove-Item -Recurse -Force 'build' }
 New-Item -ItemType Directory -Force -Path 'build\obj', 'build\logs' | Out-Null
 
@@ -155,6 +161,15 @@ function Start-Child([string]$exe, [string[]]$childArgs, [string]$workDir) {
 
 $includes = @('-Isrc', '-Ithird_party/raylib/include', '-Ithird_party/miniaudio')
 $flags = @('-std=c++20', '-O2', '-Wall', '-Wextra', '-Wno-unused-parameter', '-fno-strict-aliasing')
+
+Write-Host '语法预检（g++ -fsyntax-only）...'
+foreach ($src in $sources) {
+    & $Cxx @flags @includes '-fsyntax-only' $src 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "语法检查失败：$src" -ForegroundColor Red
+        exit $LASTEXITCODE
+    }
+}
 
 $objects = @()
 $failed = @()

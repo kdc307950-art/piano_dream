@@ -252,4 +252,18 @@ bool saveMidiFile(const std::string& path, const std::vector<std::uint8_t>& byte
     return true;
 }
 
+bool saveMidiFile(const std::filesystem::path& path, const std::vector<std::uint8_t>& bytes, std::string* error) {
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    if (!out) {
+        if (error) *error = "无法写入文件：" + path.string();
+        return false;
+    }
+    out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    if (!out) {
+        if (error) *error = "写入过程中出错：" + path.string();
+        return false;
+    }
+    return true;
+}
+
 } // namespace piano

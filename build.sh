@@ -87,6 +87,13 @@ if [ ! -f third_party/miniaudio/miniaudio.h ]; then
 fi
 
 # --------------------------------------------------------------------- 准备
+if command -v python3 >/dev/null 2>&1; then
+  python3 tools/generate_glyphs.py
+  python3 tools/generate_glyphs.py --check
+elif command -v python >/dev/null 2>&1; then
+  python tools/generate_glyphs.py
+  python tools/generate_glyphs.py --check
+fi
 [ "$CLEAN" -eq 1 ] && rm -rf build
 mkdir -p build/obj
 
@@ -107,6 +114,13 @@ FLAGS=(
   -std=c++20 -O2 -Wall -Wextra -Wno-unused-parameter
   -fno-strict-aliasing
 )
+
+echo "语法预检（g++ -fsyntax-only）..."
+for rel in "${SOURCES[@]}"; do
+  if ! "$CXX" "${FLAGS[@]}" "${INCLUDES[@]}" -fsyntax-only "$rel" >/dev/null 2>&1; then
+    echo "语法检查失败：$rel"; exit 1
+  fi
+done
 
 # 注意：这里一律使用「相对路径」。
 # 本机工程目录含中文，MinGW 的汇编器（as）是独立的原生 Windows 程序，

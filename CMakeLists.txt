@@ -1,11 +1,8 @@
 # ============================================================================
 # Grand Studio · C++ 88 键钢琴模拟器
 #
-# 说明：本工程把第三方依赖直接放在 third_party/ 下（raylib 预编译静态库 +
-#       miniaudio 单头文件），因此不依赖 vcpkg / FetchContent，也不需要联网即可构建。
-#       如果你更希望由 CMake 自己拉取依赖，把下面的 RAYLIB 部分换成
-#       FetchContent_Declare(raylib GIT_REPOSITORY https://github.com/raysan5/raylib.git ...)
-#       即可，其余不用改。
+# 说明：Windows 的便携构建优先使用 third_party/ 下的 raylib 静态库；
+#       其他平台或缺少该库时，CMake 自动从 raylib 6.0 源码构建。
 #
 # 用法：
 #   cmake -S . -B build -G "MinGW Makefiles"
@@ -15,6 +12,9 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(GrandStudioPiano VERSION 1.0 LANGUAGES CXX)
+
+option(PIANO_FETCH_RAYLIB "Fetch raylib 6.0 when no local library is available" ON)
+option(PIANO_TSAN "Build with ThreadSanitizer" OFF)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -44,10 +44,21 @@ find_library(RAYLIB_LIB
     PATHS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/raylib/lib"
     NO_DEFAULT_PATH)
 
-if(NOT RAYLIB_LIB)
-    message(FATAL_ERROR
-        "找不到 raylib 静态库。请确认 third_party/raylib/lib/libraylib.a 存在，"
-        "或改用 FetchContent 拉取 raylib。")
+if(RAYLIB_LIB)
+    add_library(piano_raylib UNKNOWN IMPORTED)
+    set_target_properties(piano_raylib PROPERTIES IMPORTED_LOCATION "${RAYLIB_LIB}")
+    set(PIANO_RAYLIB_TARGET piano_raylib)
+elseif(PIANO_FETCH_RAYLIB)
+    include(FetchContent)
+    set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(BUILD_GAMES    OFF CACHE BOOL "" FORCE)
+    set(PLATFORM "Desktop" CACHE STRING "" FORCE)
+    FetchContent_Declare(raylib
+        URL https://github.com/raysan5/raylib/archive/refs/tags/6.0.tar.gz)
+    FetchContent_MakeAvailable(raylib)
+    set(PIANO_RAYLIB_TARGET raylib)
+else()
+    message(FATAL_ERROR "找不到 raylib；请启用 PIANO_FETCH_RAYLIB 或提供本地静态库。")
 endif()
 
 # ------------------------------------------------------- 两个可执行文件
@@ -70,7 +81,7 @@ foreach(tgt piano piano-cli)
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
         "${CMAKE_CURRENT_SOURCE_DIR}/third_party/raylib/include"
         "${CMAKE_CURRENT_SOURCE_DIR}/third_party/miniaudio")
-    target_link_libraries(${tgt} PRIVATE ${RAYLIB_LIB})
+    target_link_libraries(${tgt} PRIVATE ${PIANO_RAYLIB_TARGET})
 endforeach()
 
 # --------------------------------------------------------------- 平台系统库
@@ -104,10 +115,20 @@ else()
     target_compile_options(piano_objs PRIVATE -Wall -Wextra -Wno-unused-parameter -fno-strict-aliasing)
 endif()
 
+if(PIANO_TSAN AND NOT MSVC)
+    target_compile_options(piano_objs PRIVATE -fsanitize=thread -fno-omit-frame-pointer)
+    foreach(tgt piano piano-cli)
+        target_link_options(${tgt} PRIVATE -fsanitize=thread)
+    endforeach()
+endif()
+
 # 输出到工程根目录：用户一眼能看到，双击时工作目录就是工程根，
 # assets/samples、exports/ 都能自然找到。
 set_target_properties(piano piano-cli PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+
+enable_testing()
+add_test(NAME piano_selftest COMMAND piano-cli --selftest)
 
 message(STATUS "Grand Studio Piano · raylib = ${RAYLIB_LIB}")
 message(STATUS "  产物：piano.exe (GUI，双击玩) / piano-cli.exe (控制台，--selftest)")

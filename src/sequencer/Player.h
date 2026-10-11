@@ -76,14 +76,17 @@ private:
         std::uint8_t  velocity = 0;
         std::uint8_t  track = 0;
         bool          isOn = true;
+        std::size_t   eventId = 0;
     };
 
     /// 等待音频线程离开 process() 临界区。
     void waitForAudioIdle();
-    void rebuild(double anchorTick, std::uint64_t anchorFrame);
+    void rebuild(double anchorTick, std::uint64_t anchorFrame, bool preserveHeld = false);
 
     Song song_;
     std::vector<Action> actions_;
+    // 每个原始事件实际发出的音高；-1 表示没有发声（包括静音轨）。
+    std::vector<int> soundingNotes_;
     std::size_t cursor_ = 0;
 
     double sampleRate_ = 48000.0;

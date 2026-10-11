@@ -167,7 +167,7 @@ void PianoView::draw(const Mixer& mixer, const InputRouter& input, const FontBoo
         if (k.midi % 12 == 0) {
             const std::string name = noteName(k.midi);
             const float tw = fonts.smallWidth(name.c_str());
-            fonts.drawSmall(name.c_str(), r.x + (r.width - tw) * 0.5f, r.y + r.height - 30.0f,
+            fonts.drawSmall(name.c_str(), r.x + (r.width - tw) * 0.5f, r.y + r.height - 44.0f,
                             active ? Color{ 90, 66, 30, 255 } : Color{ 100, 112, 131, 255 });
         }
         // 电脑键盘快捷键标签

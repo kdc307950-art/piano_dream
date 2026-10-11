@@ -17,10 +17,15 @@
 #include "core/Note.h"
 #include "core/SpscQueue.h"
 #include "midi/MidiReader.h"
+#include "midi/MidiInputParser.h"
+#include "midi/MidiInputQueue.h"
+#include "midi/MidiInputVirtualPlayer.h"
 #include "midi/MidiWriter.h"
 #include "sequencer/Player.h"
 #include "sequencer/PracticeJudge.h"
+#include "sequencer/Recorder.h"
 #include "songs/BuiltinSongs.h"
+#include "ui/UiStrings.h"
 
 namespace piano {
 namespace {
@@ -149,6 +154,26 @@ void testMidi() {
     const MidiParseResult bad = parseMidi(junk, sizeof(junk));
     check(!bad.ok, "非 MIDI 文件被拒绝");
 
+    // Format 1：轨道 0 只有元事件，轨道 2 的音符最多；首个 Tempo 应生效。
+    auto makeTrack = [](std::vector<std::uint8_t> body) {
+        const std::uint32_t n = static_cast<std::uint32_t>(body.size());
+        std::vector<std::uint8_t> t{ 'M','T','r','k', static_cast<std::uint8_t>(n >> 24),
+                                     static_cast<std::uint8_t>(n >> 16), static_cast<std::uint8_t>(n >> 8),
+                                     static_cast<std::uint8_t>(n) };
+        t.insert(t.end(), body.begin(), body.end()); return t;
+    };
+    const std::vector<std::uint8_t> f1a = makeTrack({ 0,0xFF,0x51,3,0x0F,0x42,0x40, 0,0xFF,0x2F,0 }); // 60 BPM
+    const std::vector<std::uint8_t> f1b = makeTrack({ 0,0x90,60,80, 0x81,0x70,0x80,60,0, 0,0xFF,0x2F,0 });
+    const std::vector<std::uint8_t> f1c = makeTrack({ 0,0x90,62,80, 0x81,0x70,0x80,62,0, 0,0x90,64,80,
+                                                       0x81,0x70,0x80,64,0, 0,0xFF,0x2F,0 });
+    std::vector<std::uint8_t> f1{ 'M','T','h','d',0,0,0,6,0,1,0,3,1,0xE0 };
+    for (const auto& t : { f1a, f1b, f1c }) f1.insert(f1.end(), t.begin(), t.end());
+    const MidiParseResult rf1 = parseMidi(f1.data(), f1.size());
+    check(rf1.ok && rf1.song.bpm == 60, "Format 1 只取首个 Tempo");
+    int melodyNotes = 0, accompNotes = 0;
+    for (const auto& e : rf1.song.events) (e.track == kTrackMelody ? melodyNotes : accompNotes)++;
+    check(melodyNotes == 2 && accompNotes == 1, "Format 1 选择音符数最多的旋律轨");
+
     section("midi/Writer");
     Song s;
     s.id = "t";
@@ -192,6 +217,97 @@ void testMidi() {
 
     const Song fromRec = recordingToSong(rec, 48000.0, 48000, {});
     check(fromRec.events.size() == 2, "录制转 Song 成功");
+
+    Recorder recorder;
+    recorder.start(100);
+    recorder.capture(100, MsgType::Sustain, 0, 127);
+    recorder.capture(200, MsgType::Sustain, 0, 0);
+    recorder.stop(300);
+    check(recorder.events().size() == 2 && recorder.events()[0].type == MsgType::Sustain &&
+          recorder.events()[1].velocity == 0, "录制流保留踏板 CC64 事件");
+}
+
+void testMidiInputParser() {
+    section("midi/MidiInputParser");
+    MidiInputParser parser;
+    std::vector<MidiInputEvent> events;
+    const std::vector<std::uint8_t> bytes = {
+        0x90, 60, 100, 62, 0,             // running status + velocity-zero NoteOff
+        0xF8,                              // realtime interleaved, ignored
+        0x80, 60, 40,                     // explicit NoteOff
+        0xB0, 64, 127, 64, 0,             // CC64 on/off with running status
+        0xB0, 123, 0,                     // CC123 all notes off
+        0xF0, 0x01, 0x02, 0xF7,           // SysEx ignored
+        0x90, 65, 90,
+    };
+    for (const auto b : bytes) parser.feed(b, events);
+    check(events.size() == 7, "解析 NoteOn/NoteOff、CC64、CC123 并忽略 SysEx");
+    if (events.size() == 7) {
+        check(events[0].type == MidiInputType::NoteOn && events[0].note == 60,
+              "NoteOn 事件正确");
+        check(events[1].type == MidiInputType::NoteOff && events[1].note == 62,
+              "速度 0 的 NoteOn 转为 NoteOff");
+        check(events[3].type == MidiInputType::Sustain && events[3].velocity == 127 &&
+              events[4].type == MidiInputType::Sustain && events[4].velocity == 0,
+              "CC64 踏板开关正确");
+        check(events[5].type == MidiInputType::AllNotesOff && events[6].note == 65,
+              "CC123 和后续运行状态正确");
+    }
+    check(parser.ignoredCount() >= 4, "实时消息与 SysEx 被计数并忽略");
+
+    parser.reset();
+    events.clear();
+    parser.feed(60, events);               // 没有状态字节
+    parser.feed(0xF0, events);
+    parser.feed(60, events);               // SysEx 内数据
+    check(events.empty() && parser.ignoredCount() >= 2, "无状态数据和 SysEx 数据不会产生音符");
+}
+
+void testMidiInputQueue() {
+    section("midi/MidiInputQueue");
+    MidiInputQueue queue;
+    for (int i = 0; i < 3; ++i) {
+        queue.push({ MidiInputEvent{ MidiInputType::NoteOn, 0,
+                                     static_cast<std::uint8_t>(60 + i), 100 },
+                     static_cast<double>(i) * 0.01 });
+    }
+    std::vector<TimedMidiInputEvent> drained;
+    check(queue.drain(drained) == 3 && drained.size() == 3 && drained[2].event.note == 62,
+          "独立 MIDI 队列按顺序批量取出");
+    check(queue.size() == 0, "批量取出后队列为空");
+
+    for (std::size_t i = 0; i < MidiInputQueue::kCapacity + 1; ++i)
+        queue.push({});
+    check(queue.dropped() == 1, "队列满时丢弃并计数，不影响已入队事件");
+
+    MidiInputClock clock(48000.0);
+    clock.reset(1000, 10.0);
+    check(clock.toFrame(10.5) == 25000 && clock.toFrame(9.0) == 1000,
+          "MIDI 秒时间戳准确映射到音频帧");
+
+    Song song;
+    song.bpm = 120; song.ppq = 480;
+    song.events.push_back(NoteEvent{ 480, 240, 60, 100, 0, 0 });
+    MidiInputQueue virtualQueue;
+    check(enqueueVirtualMidiSong(song, virtualQueue, 2.0) == 2,
+          "虚拟 MIDI 曲目写入同一输入队列");
+    drained.clear();
+    virtualQueue.drain(drained);
+    MidiInputClock virtualClock(48000.0);
+    virtualClock.reset(0, 2.0);
+    check(drained.size() == 2 && virtualClock.toFrame(drained[0].timestampSeconds) == 24000 &&
+          virtualClock.toFrame(drained[1].timestampSeconds) == 36000,
+          "虚拟 MIDI 事件时间戳可回放到音频帧");
+}
+
+void testLanguageTable() {
+    section("ui/UiStrings");
+    ui::setLanguage(ui::Language::Chinese);
+    check(std::string(ui::t(ui::kGood)) == "不错", "中文文案为默认语言");
+    ui::setLanguage(ui::Language::English);
+    check(std::string(ui::t(ui::kGood)) == "Good" &&
+          std::string(ui::t(ui::kTranspose)) == "Transpose", "英文文案表可切换");
+    ui::setLanguage(ui::Language::Chinese);
 }
 
 // ---------------------------------------------------------------------------
@@ -347,6 +463,24 @@ void testPlayer() {
     step();   // 渲染第 48000 帧
     check(mixer.visualCount(60) == 0, "第 48000 帧（tick 960）精确松键");
 
+    // 播放中移调：NoteOff 必须使用 NoteOn 当时的实际音高。
+    Song shifted;
+    shifted.bpm = 120; shifted.ppq = 480;
+    shifted.events.push_back(NoteEvent{0, 480, 60, 100, 0, 0});
+    Player shiftedPlayer;
+    shiftedPlayer.setSong(shifted, 48000.0);
+    shiftedPlayer.play(0, 0.0);
+    shiftedPlayer.setTranspose(2);
+    std::vector<float> one(2);
+    Player::process(&shiftedPlayer, mixer, mixer.currentFrame(), 1);
+    mixer.render(one.data(), 1);
+    shiftedPlayer.setTranspose(-2);
+    for (int i = 0; i < 24000; ++i) {
+        Player::process(&shiftedPlayer, mixer, mixer.currentFrame(), 1);
+        mixer.render(one.data(), 1);
+    }
+    check(mixer.visualCount(62) == 0 && mixer.visualCount(58) == 0, "移调变化后 NoteOff 释放原实际音高");
+
     // 曲目结束
     player.stop();
     check(!player.playing(), "stop() 后停止");
@@ -453,6 +587,9 @@ int runSelfTest(bool verbose) {
     testNote();
     testQueue();
     testMidi();
+    testMidiInputParser();
+    testMidiInputQueue();
+    testLanguageTable();
     testMixer();
     testPlayer();
     testJudge();

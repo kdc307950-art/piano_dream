@@ -7,6 +7,7 @@
 // 通过 AudioDevice 的无锁队列与 Player 的「等待音频线程空闲」协议完成。
 //
 #include <cstdint>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -38,6 +39,7 @@ public:
 
     /// 自动截图模式：渲染若干帧后存图并退出（用于无人值守地检视界面）。
     void setCaptureMode(int frames, std::string path, bool autoPlaySong);
+    void setWindowSize(int width, int height) noexcept;
 
     // ---- InputSink ----
     void onNoteOn(int midi, float velocity) override;
@@ -80,11 +82,13 @@ private:
     void applyPracticeMode();
     void loadFavorites();
     void saveFavorites();
+    void loadLanguage();
+    void saveLanguage() const;
     bool isFavorite(int index) const;
     void toggleFavorite(int index);
 
     std::string timestampName(const char* prefix, const char* ext) const;
-    std::string exportDirectory() const;
+    std::filesystem::path exportDirectory() const;
     void setStatus(const std::string& text, bool warn = false);
     void toast(const std::string& text);
 
@@ -167,6 +171,11 @@ private:
     int         autoExitFrames_ = 0;
     std::string screenshotPath_;
     bool        captureAutoPlay_ = false;
+    int         windowWidth_ = 1520;
+    int         windowHeight_ = 1000;
+    float       dpiScale_ = 1.0f;
+    float       viewScale_ = 1.0f;
+    Vector2     viewOffset_{};
 };
 
 } // namespace piano

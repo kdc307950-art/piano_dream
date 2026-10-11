@@ -73,27 +73,28 @@ struct UiLayout {
     float blackH = 139.0f;
 
     void compute(float width, float height) {
-        w = width < 900.0f ? 900.0f : width;
-        h = height < 620.0f ? 620.0f : height;
+        w = width < 1100.0f ? 1100.0f : width;
+        h = height < 880.0f ? 880.0f : height;
 
         const float margin = 24.0f;
         topbar = { margin, 12.0f, w - margin * 2.0f, 44.0f };
         hero   = { margin, 60.0f, w - margin * 2.0f, 58.0f };
 
-        const float consoleTop    = 124.0f;
-        const float consoleBottom = h - 102.0f;
+        const float consoleTop    = 140.0f;
+        const float contentH      = std::min(h, 1000.0f);
+        const float consoleBottom = contentH - 112.0f;
         console = { margin, consoleTop, w - margin * 2.0f, consoleBottom - consoleTop };
 
         const float pad = 20.0f;
-        const float x   = console.x + pad;
-        const float cw  = console.width - pad * 2.0f;
+        const float cw  = std::min(console.width - pad * 2.0f, 1440.0f);
+        const float x   = console.x + (console.width - cw) * 0.5f;
         float y = console.y + 14.0f;
 
         header   = { x, y, cw, 38.0f }; y += 46.0f;
         controls = { x, y, cw, 64.0f }; y += 72.0f;
         rail     = { x, y, cw, 26.0f }; y += 30.0f;
 
-        const float below = 34.0f + 50.0f + 12.0f + 24.0f;   // bottom + transport + timeline + 间距
+        const float below = 34.0f + 50.0f + 12.0f + 24.0f + 150.0f; // 为曲目面板预留空间
         const float avail = console.y + console.height - 14.0f - y - below;
         keyH   = std::clamp(avail, 150.0f, 300.0f);
         blackH = keyH * 0.633f;
@@ -106,8 +107,10 @@ struct UiLayout {
         timeline  = { x, y, cw, 4.0f };  y += 12.0f;
         song      = { x, y, cw, std::max(60.0f, console.y + console.height - 14.0f - y) };
 
-        guide  = { margin, consoleBottom + 10.0f, w - margin * 2.0f, 68.0f };
-        footer = { margin, guide.y + guide.height + 2.0f, w - margin * 2.0f, 16.0f };
+        const float lowerW = std::min(w - margin * 2.0f, 1440.0f);
+        const float lowerX = margin + (w - margin * 2.0f - lowerW) * 0.5f;
+        guide  = { lowerX, consoleBottom + 10.0f, lowerW, 84.0f };
+        footer = { lowerX, guide.y + guide.height + 2.0f, lowerW, 16.0f };
     }
 };
 

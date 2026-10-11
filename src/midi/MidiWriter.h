@@ -7,6 +7,7 @@
 // 保证在任何播放器里都不会出现「卡住不断音」。
 //
 #include <cstdint>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -31,6 +32,7 @@ std::vector<std::uint8_t> writeRecordingMidi(const std::vector<RecordedEvent>& e
                                              const MidiWriteOptions& opts = {});
 
 bool saveMidiFile(const std::string& path, const std::vector<std::uint8_t>& bytes, std::string* error = nullptr);
+bool saveMidiFile(const std::filesystem::path& path, const std::vector<std::uint8_t>& bytes, std::string* error = nullptr);
 
 /// 把录制事件转成 tick 制的 Song（用于回放 / 跟练比对）。
 Song recordingToSong(const std::vector<RecordedEvent>& events,

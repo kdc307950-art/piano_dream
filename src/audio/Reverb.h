@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstddef>
 #include <vector>
+#include <atomic>
 
 #include "audio/Dsp.h"
 
@@ -42,8 +43,8 @@ public:
     }
 
     /// mix ∈ [0, 1]，0 表示完全干声。
-    void setMix(float mix) noexcept { mix_ = clampf(mix, 0.0f, 1.0f); }
-    float mix() const noexcept { return mix_; }
+    void setMix(float mix) noexcept { mix_.store(clampf(mix, 0.0f, 1.0f), std::memory_order_relaxed); }
+    float mix() const noexcept { return mix_.load(std::memory_order_relaxed); }
 
     void setDamping(float d) noexcept {
         damping_ = clampf(d, 0.0f, 1.0f);
@@ -52,7 +53,8 @@ public:
 
     /// 原地处理一对立体声样本，返回已混合的输出。
     inline void process(float& l, float& r) noexcept {
-        if (!prepared_ || mix_ <= 1e-4f) return;
+        const float mix = mix_.load(std::memory_order_relaxed);
+        if (!prepared_ || mix <= 1e-4f) return;
 
         const float input = (l + r) * 0.015f;   // 送入增益，避免反馈回路过载
 
@@ -67,8 +69,8 @@ public:
         }
 
         // HTML 版：wet ≈ mix*0.66，dry ≈ 1 - mix*0.32
-        const float wet = mix_ * 0.66f * 3.0f;   // Freeverb 输出偏小，补一个系数
-        const float dry = 1.0f - mix_ * 0.32f;
+        const float wet = mix * 0.66f * 3.0f;   // Freeverb 输出偏小，补一个系数
+        const float dry = 1.0f - mix * 0.32f;
         l = l * dry + outL * wet;
         r = r * dry + outR * wet;
     }
@@ -113,7 +115,7 @@ private:
     Comb combL_[8], combR_[8];
     Allpass apL_[4], apR_[4];
     double sampleRate_ = 48000.0;
-    float  mix_ = 0.0f;
+    std::atomic<float> mix_{0.0f};
     float  damping_ = 0.22f;
     bool   prepared_ = false;
 };

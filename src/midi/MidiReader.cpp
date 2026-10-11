@@ -97,10 +97,13 @@ MidiParseResult parseMidi(const std::uint8_t* data, std::size_t size) {
 
     std::size_t pos = 8 + headerLen;
     std::uint32_t tempoUs = 500000;   // 默认 120 BPM
+    bool tempoSeen = false;
     int tempoChanges = 0;
     int skipped = 0;
     std::string title;
     std::vector<NoteEvent> events;
+    std::vector<std::size_t> trackEventCounts(ntrks, 0);
+    std::vector<std::uint16_t> eventTracks;
 
     for (std::uint16_t t = 0; t < ntrks; ++t) {
         if (pos + 8 > size) break;
@@ -143,7 +146,10 @@ MidiParseResult parseMidi(const std::uint8_t* data, std::size_t size) {
                     const std::uint32_t a = tr.u8();
                     const std::uint32_t c = tr.u8();
                     const std::uint32_t e = tr.u8();
-                    tempoUs = (a << 16) | (c << 8) | e;
+                    if (!tempoSeen) {
+                        tempoUs = (a << 16) | (c << 8) | e;
+                        tempoSeen = true;
+                    }
                     ++tempoChanges;
                 } else if (type == 0x03 && title.empty() && mlen > 0) {
                     const std::size_t avail = std::min<std::size_t>(mlen, trackEnd - tr.pos);
@@ -186,12 +192,12 @@ MidiParseResult parseMidi(const std::uint8_t* data, std::size_t size) {
                     ev.note     = note;
                     ev.velocity = vel;
                     ev.channel  = chan;
-                    // 多轨文件：轨道 0 视为旋律，其余为伴奏；
-                    // 单轨文件：按通道区分。
-                    ev.track = (ntrks > 1)
-                        ? (t == 0 ? kTrackMelody : kTrackAccomp)
-                        : (chan == 0 ? kTrackMelody : kTrackAccomp);
+                    // Format 1 的轨道 0 往往只有 Tempo/拍号元事件；先按轨道收集，
+                    // 解析结束后再把音符数最多的轨道标为旋律。
+                    ev.track = (ntrks > 1) ? kTrackAccomp
+                                           : (chan == 0 ? kTrackMelody : kTrackAccomp);
                     pending[note].push_back(ev);
+                    if (t < trackEventCounts.size()) ++trackEventCounts[t];
                 } else {
                     // velocity == 0 的 NoteOn 同样视为 NoteOff
                     auto& q = pending[note];
@@ -200,6 +206,7 @@ MidiParseResult parseMidi(const std::uint8_t* data, std::size_t size) {
                         q.erase(q.begin());
                         ev.duration = std::max<std::uint32_t>(1, cur - ev.tick);
                         events.push_back(ev);
+                        eventTracks.push_back(t);
                     } else {
                         ++skipped;
                     }
@@ -220,8 +227,17 @@ MidiParseResult parseMidi(const std::uint8_t* data, std::size_t size) {
             for (auto& ev : q) {
                 ev.duration = std::max<std::uint32_t>(1, cur > ev.tick ? cur - ev.tick : ppq / 4);
                 events.push_back(ev);
+                eventTracks.push_back(t);
             }
         }
+    }
+
+    if (ntrks > 1 && !events.empty()) {
+        std::size_t melodyTrack = 0;
+        for (std::size_t t = 1; t < trackEventCounts.size(); ++t)
+            if (trackEventCounts[t] > trackEventCounts[melodyTrack]) melodyTrack = t;
+        for (std::size_t i = 0; i < events.size() && i < eventTracks.size(); ++i)
+            events[i].track = eventTracks[i] == melodyTrack ? kTrackMelody : kTrackAccomp;
     }
 
     if (events.empty()) {

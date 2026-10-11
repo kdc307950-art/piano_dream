@@ -8,10 +8,69 @@
 //   2. 将来要做多语言，只需替换这一张表。
 //
 #include <string>
+#include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace piano {
 namespace ui {
+
+enum class Language { Chinese, English };
+inline Language gLanguage = Language::Chinese;
+
+inline void setLanguage(Language language) noexcept { gLanguage = language; }
+inline Language language() noexcept { return gLanguage; }
+
+/// 将中文文案常量映射到英文表。未登记的内部文案保持中文，避免状态信息丢失。
+inline const char* t(const char* chinese) {
+    if (gLanguage == Language::Chinese || !chinese) return chinese;
+    static const std::unordered_map<std::string_view, const char*> en = {
+        {"Grand Studio · C++ 88 键钢琴", "Grand Studio · C++ 88-Key Piano"},
+        {"让音乐，", "Make music, "}, {"触手可及。", "Within reach."},
+        {"一架属于你的 88 键三角钢琴。支持电脑键盘、鼠标、多点触控、力度响应、延音踏板与 MIDI 导入导出。", "Your 88-key grand piano. Keyboard, mouse, touch, dynamics, sustain and MIDI import/export."},
+        {"音色引擎", "Sound engine"}, {"原声钢琴 · 自动", "Acoustic piano · Auto"},
+        {"真实采样 · 优先", "Samples · Priority"}, {"物理泛音 · 离线", "Physical harmonics · Offline"},
+        {"主音量", "Master volume"}, {"空间混响", "Reverb"}, {"延音踏板", "Sustain pedal"},
+        {"踏板", "Pedal"}, {"开启", "On"}, {"关闭", "Off"},
+        {"录制", "Record"}, {"开始录制", "Start recording"}, {"结束录制", "Stop recording"},
+        {"回放", "Playback"}, {"■ 停止", "■ Stop"}, {"节拍器", "Metronome"},
+        {"关闭节拍器", "Disable metronome"}, {"搜索曲目", "Search songs"},
+        {"全部难度", "All levels"}, {"入门", "Easy"}, {"进阶", "Advanced"},
+        {"只看收藏", "Favorites only"}, {"播放曲目", "Play song"}, {"■ 停止曲目", "■ Stop song"},
+        {"完整播放", "Full playback"}, {"仅伴奏跟练", "Practice with accompaniment"}, {"节拍引导", "Beat guide"},
+        {"↓ 导出 MIDI", "↓ Export MIDI"}, {"↓ 导出曲目", "↓ Export song"},
+        {"☆ 收藏", "☆ Favorite"}, {"★ 已收藏", "★ Favorited"},
+        {"速度", "Speed"}, {"移调", "Transpose"}, {"静音旋律", "Mute melody"},
+        {"静音伴奏", "Mute accompaniment"}, {"跟随音域", "Follow range"},
+        {"滚动鼠标滚轮、拖动此处或点击 ± 切换音域", "Scroll, drag here, or click ± to change range"},
+        {"同时支持多个音符", "Multiple notes supported"}, {"88 KEYS  ·  A0 — C8", "88 KEYS  ·  A0 — C8"},
+        {"点击琴键，开始演奏", "Click a key to play"}, {"音频已就绪", "Audio ready"},
+        {"音频设备不可用，界面仍可使用", "Audio unavailable; UI remains usable"},
+        {"导入：把 .mid 文件拖到窗口内", "Import: drop a .mid file into the window"},
+        {"跟练判定", "Practice judge"}, {"完美", "Perfect"}, {"不错", "Good"},
+        {"漏音", "Miss"}, {"多余", "Extra"}, {"连击", "Combo"}, {"准确率", "Accuracy"}, {"得分", "Score"},
+        {"正在演奏 ", "Playing "}, {" 个音符", " notes"},
+        {"电脑键盘演奏", "Computer keyboard"}, {"细腻触键体验", "Expressive touch"},
+        {"留住演奏灵感", "Keep your ideas"},
+        {"下排 Z—M，上排 Q—P，\n黑键用 S、2 等。", "Bottom row Z-M, top row Q-P,\nblack keys use S, 2, etc."},
+        {"空格临时延音，[ ] 升降八度。", "Space sustains; [ ] shift octave."},
+        {"鼠标与多点触控，\n越靠近琴键下沿力度越强。", "Mouse and multitouch,\npress lower for more force."},
+        {"可滑奏、可和弦，松键自动止音。", "Glissando and chords; release to stop."},
+        {"一键录制回放，\n导出标准 MIDI 文件。", "Record and replay,\nexport standard MIDI."},
+        {"放入钢琴采样即可切换真实音色。", "Add piano samples for realism."},
+        {"GRAND STUDIO · 让每个灵感，都有声音。   C++ / raylib / miniaudio 实现", "GRAND STUDIO · Give every idea a voice.   Built with C++ / raylib / miniaudio"},
+        {"请选择曲目开始自动播放", "Select a song to start playback"},
+        {"录制已开始 · 尽情演奏", "Recording started · Have fun"}, {"还没有录制到音符", "No notes recorded"},
+        {"录制完成，可以回放或导出 MIDI", "Recording complete; play back or export MIDI"},
+        {"回放结束", "Playback finished"}, {"MIDI 文件已导出", "MIDI file exported"},
+        {"导出失败", "Export failed"}, {"MIDI 导入成功", "MIDI imported"}, {"MIDI 导入失败", "MIDI import failed"},
+        {"已加入收藏", "Added to favorites"}, {"已取消收藏", "Removed from favorites"},
+        {"请先选择一首曲目", "Select a song first"}, {"未找到采样，使用合成音色", "No samples found; using synth"},
+        {"● 离线合成音色", "● Offline synth"}, {"中", "中"}
+    };
+    const auto it = en.find(chinese);
+    return it == en.end() ? chinese : it->second;
+}
 
 // ---- 品牌 / 顶部 ----
 inline constexpr const char* kWindowTitle   = "Grand Studio · C++ 88 键钢琴";

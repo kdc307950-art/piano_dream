@@ -176,7 +176,7 @@ Voice* Mixer::startVoice(int midi, float vel, Source source) {
     }
 
     const std::uint64_t frame = frameCounter_.load(std::memory_order_relaxed);
-    const bool wantSample = (engineMode_ != EngineMode::SynthOnly) && bank_ && !bank_->empty();
+    const bool wantSample = (engineMode_.load(std::memory_order_relaxed) != EngineMode::SynthOnly) && bank_ && !bank_->empty();
     const SampleBuffer* buf = wantSample ? bank_->nearest(midi, kSampleMaxDistance) : nullptr;
 
     if (buf) v->startSample(buf, sampleRate_, midi, vel, source, frame);
@@ -305,8 +305,9 @@ void Mixer::render(float* out, std::uint32_t frames) {
         float r = out[i * 2 + 1];
 
         reverb_.process(l, r);
-        l *= masterVol_ * 0.72f;
-        r *= masterVol_ * 0.72f;
+    const float master = masterVol_.load(std::memory_order_relaxed);
+    l *= master * 0.72f;
+    r *= master * 0.72f;
         l = comp_.process(l);
         r = comp_.process(r);
         l = softClip(l);

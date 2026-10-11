@@ -21,8 +21,7 @@ struct BusyGuard {
 
 void Player::waitForAudioIdle() {
     playing_.store(false, std::memory_order_release);
-    for (int i = 0; i < 1000; ++i) {
-        if (!busy_.load(std::memory_order_acquire)) return;
+    while (busy_.load(std::memory_order_acquire)) {
         std::this_thread::sleep_for(std::chrono::microseconds(200));
     }
 }
@@ -31,6 +30,7 @@ void Player::setSong(const Song& song, double sampleRate) {
     waitForAudioIdle();
     song_ = song;                                  // 副本，生命周期独立
     song_.sortEvents();
+    soundingNotes_.assign(song_.events.size(), -1);
     sampleRate_ = sampleRate > 1000.0 ? sampleRate : 48000.0;
     framesPerTick_ = framesPerTick(song_.bpm, song_.ppq, sampleRate_, speed_);
     actions_.clear();
@@ -42,7 +42,7 @@ void Player::setSong(const Song& song, double sampleRate) {
     for (int i = 0; i < kMaxTracks; ++i) muted_[i].store(false, std::memory_order_relaxed);
 }
 
-void Player::rebuild(double anchorTick, std::uint64_t anchorFrame) {
+void Player::rebuild(double anchorTick, std::uint64_t anchorFrame, bool preserveHeld) {
     actions_.clear();
     cursor_ = 0;
     startTick_ = anchorTick;
@@ -57,26 +57,30 @@ void Player::rebuild(double anchorTick, std::uint64_t anchorFrame) {
     };
 
     actions_.reserve(song_.events.size() * 2);
-    for (const auto& e : song_.events) {
+    for (std::size_t id = 0; id < song_.events.size(); ++id) {
+        const auto& e = song_.events[id];
         const double onTick  = static_cast<double>(e.tick);
         const double offTick = static_cast<double>(e.endTick());
-        if (offTick <= anchorTick) continue;       // 完全落在锚点之前
+        if (offTick <= anchorTick && soundingNotes_[id] < 0) continue;
 
         Action on;
         on.note     = e.note;
         on.velocity = e.velocity;
         on.track    = e.track;
         on.isOn     = true;
-        // 跨越锚点、仍在发声的音：立即补一次触发，避免变速 / 跳转后被切断
+        on.eventId  = id;
+        // 变速保留已有声部，跳转则补发跨过锚点的音。
         on.frame    = (onTick >= anchorTick) ? frameOf(onTick) : anchorFrame;
-        actions_.push_back(on);
+        if (!preserveHeld || (onTick >= anchorTick && soundingNotes_[id] < 0))
+            actions_.push_back(on);
 
         Action off;
         off.note     = e.note;
         off.velocity = 0;
         off.track    = e.track;
         off.isOn     = false;
-        off.frame    = frameOf(offTick);
+        off.eventId  = id;
+        off.frame    = offTick <= anchorTick ? anchorFrame : frameOf(offTick);
         actions_.push_back(off);
     }
 
@@ -91,6 +95,7 @@ void Player::rebuild(double anchorTick, std::uint64_t anchorFrame) {
 void Player::play(std::uint64_t anchorFrame, double startTick) {
     if (song_.events.empty()) return;
     waitForAudioIdle();                            // 确保可以独占事件表
+    std::fill(soundingNotes_.begin(), soundingNotes_.end(), -1);
     framesPerTick_ = framesPerTick(song_.bpm, song_.ppq, sampleRate_, speed_);
     rebuild(startTick, anchorFrame);
     positionFrame_.store(static_cast<double>(anchorFrame), std::memory_order_relaxed);
@@ -100,7 +105,7 @@ void Player::play(std::uint64_t anchorFrame, double startTick) {
 }
 
 void Player::stop() noexcept {
-    playing_.store(false, std::memory_order_release);
+    waitForAudioIdle();
     finished_.store(true, std::memory_order_relaxed);
 }
 
@@ -109,6 +114,7 @@ void Player::setSpeed(double speed) {
     if (std::fabs(s - speed_) < 1e-6) return;
 
     const bool wasPlaying = playing_.load(std::memory_order_acquire);
+    waitForAudioIdle();
     const double tick = wasPlaying ? positionTick() : 0.0;
     speed_ = s;
     framesPerTick_ = framesPerTick(song_.bpm, song_.ppq, sampleRate_, speed_);
@@ -116,8 +122,7 @@ void Player::setSpeed(double speed) {
     if (wasPlaying) {
         // 以「当前进度 + 最近一次块起点」为锚点重建，保证变速后从原位置继续
         const std::uint64_t anchor = lastBlockStart_.load(std::memory_order_relaxed);
-        waitForAudioIdle();
-        rebuild(tick, anchor);
+        rebuild(tick, anchor, true);
         positionFrame_.store(static_cast<double>(anchor), std::memory_order_relaxed);
         finished_.store(false, std::memory_order_relaxed);
         playing_.store(true, std::memory_order_release);
@@ -147,7 +152,10 @@ std::uint32_t Player::process(void* user, Mixer& mixer,
     if (!self->playing_.load(std::memory_order_acquire)) return maxFrames;
 
     BusyGuard guard(&self->busy_);
+    // UI 可能在第一次 playing 检查后暂停了调度，必须再次检查。
+    if (!self->playing_.load(std::memory_order_acquire)) return maxFrames;
     self->lastBlockStart_.store(blockStartFrame, std::memory_order_relaxed);
+    self->positionFrame_.store(static_cast<double>(blockStartFrame), std::memory_order_relaxed);
 
     // 1) 处理所有「发生在本帧或之前」的事件
     const int transpose = self->transpose_.load(std::memory_order_relaxed);
@@ -157,14 +165,14 @@ std::uint32_t Player::process(void* user, Mixer& mixer,
         if (a.isOn) {
             if (!self->trackMuted(a.track)) {
                 const int note = clampNote(static_cast<int>(a.note) + transpose);
+                self->soundingNotes_[a.eventId] = note;
                 mixer.noteOn(note, static_cast<float>(a.velocity) / 127.0f, Source::Song);
             }
         } else {
-            // 关闭事件始终发出，否则中途静音会留下挂音
-            const int note = clampNote(static_cast<int>(a.note) + transpose);
-            mixer.noteOff(note, Source::Song);
+            const int note = self->soundingNotes_[a.eventId];
+            if (note >= 0) mixer.noteOff(note, Source::Song);
+            self->soundingNotes_[a.eventId] = -1;
         }
-        self->positionFrame_.store(static_cast<double>(a.frame), std::memory_order_relaxed);
     }
 
     // 2) 计算距离下一个事件的帧数

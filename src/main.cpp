@@ -25,6 +25,8 @@ int main(int argc, char** argv) {
     bool capture = false;
     bool capturePlay = false;
     int  captureFrames = 90;
+    int  windowWidth = 1520;
+    int  windowHeight = 1000;
     std::string capturePath = "screenshot.png";
 
     for (int i = 1; i < argc; ++i) {
@@ -41,12 +43,17 @@ int main(int argc, char** argv) {
             capturePlay = true;
         } else if (a == "--frames" && i + 1 < argc) {
             captureFrames = std::atoi(argv[++i]);
+        } else if (a == "--width" && i + 1 < argc) {
+            windowWidth = std::atoi(argv[++i]);
+        } else if (a == "--height" && i + 1 < argc) {
+            windowHeight = std::atoi(argv[++i]);
         }
     }
 
     if (selfTest) return piano::runSelfTest(true);
 
     piano::App app;
+    app.setWindowSize(windowWidth, windowHeight);
     std::string log;
     if (!app.init(&log)) {
         std::fprintf(stderr, "初始化失败：\n%s\n", log.c_str());
