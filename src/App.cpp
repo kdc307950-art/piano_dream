@@ -692,6 +692,8 @@ void App::drawTransportRow() {
 
     DrawLineEx({ x - 16.0f, r.y + 7.0f }, { x - 16.0f, r.y + 35.0f }, 1.0f, Color{ 255, 255, 255, 25 });
 
+    widget::panel({ x - 8.0f, r.y - 5.0f, 510.0f, 52.0f },
+                   Color{ 21, 31, 46, 90 }, Color{ 53, 66, 83, 130 }, 0.14f);
     if (widget::button(ui_, 2005, { x, r.y, 140.0f, 42.0f },
                        metronomeOn_ ? ui::t(ui::kMetronomeOff) : ui::t(ui::kMetronome), false, true, metronomeOn_)) {
         metronomeOn_ = !metronomeOn_;
@@ -749,6 +751,14 @@ void App::drawSongPanel() {
 
     const float x = r.x + 14.0f;
     float y = r.y + 8.0f;
+
+    // 顶部控制行按用途分组，减少连续控件造成的视觉拥挤。
+    if (!compact) {
+        const Color groupLine{ 53, 66, 83, 150 };
+        DrawRectangleRoundedLinesEx({ x - 8.0f, y - 5.0f, 630.0f, 42.0f }, 0.12f, 6, 1.0f, groupLine);
+        DrawRectangleRoundedLinesEx({ x + 642.0f, y - 5.0f, 235.0f, 42.0f }, 0.12f, 6, 1.0f, groupLine);
+        DrawRectangleRoundedLinesEx({ x + 888.0f, y - 5.0f, 500.0f, 42.0f }, 0.12f, 6, 1.0f, groupLine);
+    }
 
     // ---- 第一行 ----
     {
@@ -912,6 +922,8 @@ void App::drawSongPanel() {
     // ---- 第四行：跟练判定 ----
     y += 30.0f;
     {
+        widget::panel({ x - 8.0f, y - 8.0f, 640.0f, 34.0f },
+                       Color{ 21, 31, 46, 100 }, Color{ 53, 66, 83, 120 }, 0.12f);
         fonts_.drawSmall(ui::t(ui::kJudgeTitle), x, y, theme::kMutedDim);
         float cx = x + fonts_.smallWidth(ui::t(ui::kJudgeTitle)) + 14.0f;
         auto stat = [&](const char* label, int value, Color c) {
