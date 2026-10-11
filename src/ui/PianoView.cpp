@@ -128,8 +128,10 @@ void PianoView::draw(const Mixer& mixer, const InputRouter& input, const FontBoo
     DrawRectangleRounded({ vp.x - 4.0f, vp.y - 4.0f, vp.width + 8.0f, vp.height + 8.0f },
                          0.03f, 6, Color{ 8, 11, 15, 255 });
 
-    BeginScissorMode(static_cast<int>(vp.x), static_cast<int>(vp.y),
-                     static_cast<int>(vp.width), static_cast<int>(vp.height));
+    BeginScissorMode(static_cast<int>(viewOffset_.x + vp.x * viewScale_),
+                     static_cast<int>(viewOffset_.y + vp.y * viewScale_),
+                     static_cast<int>(vp.width * viewScale_),
+                     static_cast<int>(vp.height * viewScale_));
 
     const int w0 = static_cast<int>(std::floor(scrollX_ / layout_.keyW));
     const int w1 = std::min(kWhiteKeyCount - 1,

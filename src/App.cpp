@@ -97,15 +97,17 @@ bool App::init(std::string* log) {
     SetExitKey(KEY_NULL);          // 禁用 ESC 退出，避免演奏时误触
 
     dpiScale_ = GetWindowScaleDPI().x;
-    // Raylib 的绘制坐标已经是逻辑窗口坐标。这里不再套 Camera2D 缩放，
-    // 否则 PianoView 的裁剪矩形仍按屏幕像素计算，会把琴键裁成一条细带。
-    viewScale_ = 1.0f;
-    viewOffset_ = {};
-    ui_.scale = 1.0f;
-    ui_.offset = {};
+    viewScale_ = std::clamp(std::min(static_cast<float>(GetScreenWidth()) / 1520.0f,
+                                     static_cast<float>(GetScreenHeight()) / 1000.0f),
+                                     0.65f, 2.5f);
+    viewOffset_ = { (static_cast<float>(GetScreenWidth()) - 1520.0f * viewScale_) * 0.5f,
+                    (static_cast<float>(GetScreenHeight()) - 1000.0f * viewScale_) * 0.5f };
+    ui_.scale = viewScale_;
+    ui_.offset = viewOffset_;
+    ui_.logicalHeight = 1000.0f;
     sampleLog_ += "[layout] framebuffer " + std::to_string(GetScreenWidth()) + "x" +
                   std::to_string(GetScreenHeight()) + " · dpi " + std::to_string(dpiScale_) + "\n";
-    layout_.compute(static_cast<float>(GetScreenWidth()), static_cast<float>(GetScreenHeight()));
+    layout_.compute(1520.0f, 1000.0f);
 
     loadLanguage();
 
@@ -127,7 +129,7 @@ bool App::init(std::string* log) {
     for (std::size_t i = 0; i < ui_generated::kSourceStringCount; ++i)
         fontSamples.emplace_back(ui_generated::kSourceStrings[i]);
     fontSamples_ = fontSamples;
-    fontScale_ = std::max(1.0f, static_cast<float>(GetRenderWidth()) / GetScreenWidth());
+    fontScale_ = std::max(1.0f, static_cast<float>(GetRenderWidth()) / GetScreenWidth()) * viewScale_;
     fonts_.load(fontSamples_, fontScale_);
     ui_.fonts = &fonts_;
 
@@ -156,10 +158,12 @@ bool App::init(std::string* log) {
     input_.setSink(this);
     input_.setHitTest([this](float x, float y, int& midi, float& vel) {
         if (dropdownOpen_) return false;
-        return pianoView_.hitTest(x, y, midi, vel);
+        return pianoView_.hitTest((x - viewOffset_.x) / viewScale_,
+                                  (y - viewOffset_.y) / viewScale_, midi, vel);
     });
     pianoView_.setKeyboardMap(&keyboardMap_);
     pianoView_.setLayout(layout_);
+    pianoView_.setViewTransform(viewScale_, viewOffset_);
     pianoView_.centerOn(60, false);
 
     // ---- 音频 ----
@@ -430,7 +434,7 @@ void App::handleInput(float dt) {
 
 void App::draw(float dt) {
     // 使用实际 framebuffer 比例，避免将系统 DPI 再乘进逻辑坐标。
-    const float rasterScale = std::max(1.0f, static_cast<float>(GetRenderWidth()) / GetScreenWidth());
+    const float rasterScale = std::max(1.0f, static_cast<float>(GetRenderWidth()) / GetScreenWidth()) * viewScale_;
     if (std::fabs(rasterScale - fontScale_) > 0.01f) {
         fontScaleTimer_ += dt;
         if (fontScaleTimer_ >= 0.15f) {
@@ -439,11 +443,24 @@ void App::draw(float dt) {
             fontScaleTimer_ = 0.0f;
         }
     } else fontScaleTimer_ = 0.0f;
-    layout_.compute(static_cast<float>(GetScreenWidth()), static_cast<float>(GetScreenHeight()));
+    const float nextScale = std::clamp(std::min(static_cast<float>(GetScreenWidth()) / 1520.0f,
+                                                static_cast<float>(GetScreenHeight()) / 1000.0f),
+                                       0.65f, 2.5f);
+    viewScale_ = nextScale;
+    viewOffset_ = { (static_cast<float>(GetScreenWidth()) - 1520.0f * viewScale_) * 0.5f,
+                    (static_cast<float>(GetScreenHeight()) - 1000.0f * viewScale_) * 0.5f };
+    ui_.scale = viewScale_;
+    ui_.offset = viewOffset_;
+    layout_.compute(1520.0f, 1000.0f);
     pianoView_.setLayout(layout_);
+    pianoView_.setViewTransform(viewScale_, viewOffset_);
 
     BeginDrawing();
     ClearBackground(theme::kBg);
+    Camera2D uiCamera{};
+    uiCamera.offset = viewOffset_;
+    uiCamera.zoom = viewScale_;
+    BeginMode2D(uiCamera);
     // 背景光晕（呼应 HTML 原版的径向渐变）
     DrawCircleGradient({ layout_.w * 0.5f, -160.0f }, 900.0f,
                        Color{ 41, 54, 76, 90 }, Color{ 11, 16, 25, 0 });
@@ -458,6 +475,7 @@ void App::draw(float dt) {
     widget::drawDeferredDropdowns(ui_);
     drawOverlays();
 
+    EndMode2D();
     EndDrawing();
 }
 

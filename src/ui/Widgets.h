@@ -25,6 +25,7 @@ struct UiContext {
     const FontBook* fonts = nullptr;
     float scale = 1.0f;
     Vector2 offset{};
+    float logicalHeight = 1000.0f;
     int  draggingSlider = 0;      // 0 = 无
     bool consumedClick = false;   // 本帧点击是否已被某个控件吃掉
     struct DeferredDropdown {
@@ -211,7 +212,7 @@ inline bool dropdown(UiContext& ui, int id, Rectangle r, const std::vector<std::
         const float rowH = 26.0f;
         const float listH = rowH * static_cast<float>(items.size()) + 8.0f;
         Rectangle list{ r.x, r.y + r.height + 4.0f, r.width, listH };
-        if (list.y + list.height > static_cast<float>(GetScreenHeight()) - 8.0f)
+        if (list.y + list.height > ui.logicalHeight - 8.0f)
             list.y = r.y - listH - 4.0f;
 
         DrawRectangleRounded(list, 0.08f, 6, Color{ 17, 26, 39, 252 });

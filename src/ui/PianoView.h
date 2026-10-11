@@ -27,6 +27,7 @@ public:
     };
 
     void setLayout(const UiLayout& layout);
+    void setViewTransform(float scale, Vector2 offset) noexcept { viewScale_ = scale; viewOffset_ = offset; }
     void setKeyboardMap(const KeyboardMap* map) { map_ = map; }
 
     float scroll() const noexcept { return scrollX_; }
@@ -60,6 +61,8 @@ private:
     float targetScroll_ = 0.0f;
     bool  animating_ = false;
     float geomKeyW_ = 0.0f;
+    float viewScale_ = 1.0f;
+    Vector2 viewOffset_{};
 };
 
 } // namespace piano
