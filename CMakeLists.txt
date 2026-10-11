@@ -38,6 +38,9 @@ target_include_directories(piano_objs PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/miniaudio")
 
 # --------------------------------------------------------------------- raylib
+#
+# 优先使用 third_party/raylib-src 下的本地 raylib 6.0 源码（离线、可复现构建，
+# 不受 GitHub 网络影响）；仅当本地源码缺失时才联网抓取 6.0 源码包。
 include(FetchContent)
 set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(BUILD_GAMES    OFF CACHE BOOL "" FORCE)
@@ -47,10 +50,21 @@ if(UNIX AND NOT APPLE)
     set(GLFW_BUILD_X11 ON CACHE BOOL "" FORCE)
     set(GLFW_BUILD_WAYLAND ON CACHE BOOL "" FORCE)
 endif()
-FetchContent_Declare(raylib
-    URL https://github.com/raysan5/raylib/archive/refs/tags/6.0.tar.gz)
-FetchContent_MakeAvailable(raylib)
-set(PIANO_RAYLIB_TARGET raylib)
+
+set(PIANO_RAYLIB_LOCAL "${CMAKE_CURRENT_SOURCE_DIR}/third_party/raylib-src")
+if(EXISTS "${PIANO_RAYLIB_LOCAL}/CMakeLists.txt")
+    message(STATUS "raylib: 使用本地源码 ${PIANO_RAYLIB_LOCAL}")
+    # 本地源码直接加入，避免 MinGW 在中文工程路径下生成 FetchContent 子构建
+    # 时把路径按系统代码页误解码。
+    add_subdirectory("${PIANO_RAYLIB_LOCAL}" "${CMAKE_BINARY_DIR}/raylib-build" EXCLUDE_FROM_ALL)
+    set(PIANO_RAYLIB_TARGET raylib)
+else()
+    message(STATUS "raylib: 本地源码缺失，回退到联网下载 6.0")
+    FetchContent_Declare(raylib
+        URL https://github.com/raysan5/raylib/archive/refs/tags/6.0.tar.gz)
+    FetchContent_MakeAvailable(raylib)
+    set(PIANO_RAYLIB_TARGET raylib)
+endif()
 
 # ------------------------------------------------------- 两个可执行文件
 #
@@ -121,5 +135,5 @@ set_target_properties(piano piano-cli PROPERTIES
 enable_testing()
 add_test(NAME piano_selftest COMMAND piano-cli --selftest)
 
-message(STATUS "Grand Studio Piano · raylib = FetchContent 6.0")
+message(STATUS "Grand Studio Piano · raylib = 6.0（本地源码优先，缺失才联网）")
 message(STATUS "  产物：piano.exe (GUI，双击玩) / piano-cli.exe (控制台，--selftest)")
