@@ -50,6 +50,18 @@ jobs:
       - name: ThreadSanitizer build
         if: matrix.os == 'ubuntu-22.04'
         run: cmake --build build-tsan --parallel
+      - name: ThreadSanitizer selftest
+        if: matrix.os == 'ubuntu-22.04'
+        run: ./build-tsan/piano-cli --selftest
+      - name: Screenshot matrix
+        if: matrix.os == 'ubuntu-22.04'
+        run: xvfb-run -a python3 tools/capture_matrix.py --exe ./piano --out artifacts/screenshots
+      - name: Upload screenshots
+        if: matrix.os == 'ubuntu-22.04'
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-ubuntu-22.04
+          path: artifacts/screenshots/
 
   macos:
     strategy:
@@ -71,7 +83,7 @@ jobs:
         run: |
           cmake -S . -B build-ci -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
-            -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch }} \
+            -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch }}
           cmake --build build-ci --parallel
       - name: Selftest
         run: ./piano-cli --selftest
