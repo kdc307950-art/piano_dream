@@ -1,0 +1,33 @@
+# 默认：仓库内统一 LF，检出时按平台自动转换
+* text=auto
+
+# 源码 / 文档：一律 LF，保证跨平台一致
+*.c      text eol=lf
+*.h      text eol=lf
+*.cpp    text eol=lf
+*.hpp    text eol=lf
+*.sh     text eol=lf
+*.md     text eol=lf
+*.txt    text eol=lf
+.gitignore    text eol=lf
+.gitattributes text eol=lf
+
+# shell 脚本必须以 LF 存储，否则 Git Bash / WSL 下会报 "bad interpreter"
+build.sh text eol=lf
+
+# Windows 批处理必须以 CRLF 存储，LF 会导致 cmd.exe 解析异常
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# PowerShell 保持 CRLF（Windows PowerShell 5.1 的习惯）
+*.ps1 text eol=crlf
+
+# 二进制：不做任何转换
+*.a    binary
+*.exe  binary
+*.dll  binary
+*.lib  binary
+*.png  binary
+*.jpg  binary
+*.wav  binary
+*.mp3  binary
