@@ -1,0 +1,18 @@
+# 构建产物
+build/
+*.o
+*.exe
+*.dll
+
+# 运行时生成
+exports/
+favorites.txt
+
+# 采样文件（体积大且许可证各异，不入库）
+assets/samples/*
+!assets/samples/README.md
+
+# 编辑器
+.vscode/
+.idea/
+compile_commands.json

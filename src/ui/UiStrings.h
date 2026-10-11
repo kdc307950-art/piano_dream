@@ -1,0 +1,168 @@
+#pragma once
+//
+// ui/UiStrings.h —— 界面文案集中表
+//
+// 两个目的：
+//   1. 字体加载时只把这些字符串里出现的码点做进字形图集 —— 中文才不会显示成 '?'；
+//      文案与绘制共用同一份常量，从根本上杜绝「加了新文案但忘记补字形」。
+//   2. 将来要做多语言，只需替换这一张表。
+//
+#include <string>
+#include <vector>
+
+namespace piano {
+namespace ui {
+
+// ---- 品牌 / 顶部 ----
+inline constexpr const char* kWindowTitle   = "Grand Studio · C++ 88 键钢琴";
+inline constexpr const char* kBrandTitle    = "GRAND STUDIO";
+inline constexpr const char* kBrandSub      = "DIGITAL PIANO EXPERIENCE";
+
+// ---- Hero ----
+inline constexpr const char* kEyebrow       = "THE ART OF SOUND · NO. 01";
+inline constexpr const char* kHeroLine1     = "让音乐，";
+inline constexpr const char* kHeroAccent    = "触手可及。";
+inline constexpr const char* kHeroDesc      =
+    "一架属于你的 88 键三角钢琴。支持电脑键盘、鼠标、多点触控、力度响应、延音踏板与 MIDI 导入导出。";
+inline constexpr const char* kLiveSound     = "LIVE SOUND";
+
+// ---- 控制台 ----
+inline constexpr const char* kInstrument    = "Concert Grand";
+inline constexpr const char* kInstrumentSub = "88 KEYS · A0 — C8 · POLYPHONIC";
+inline constexpr const char* kEngineLabel   = "音色引擎";
+inline constexpr const char* kEngineAuto    = "原声钢琴 · 自动";
+inline constexpr const char* kEngineSample  = "真实采样 · 优先";
+inline constexpr const char* kEngineSynth   = "物理泛音 · 离线";
+inline constexpr const char* kVolumeLabel   = "主音量";
+inline constexpr const char* kReverbLabel   = "空间混响";
+inline constexpr const char* kPedalLabel    = "延音踏板";
+inline constexpr const char* kPedalWord     = "踏板";
+inline constexpr const char* kOn            = "开启";
+inline constexpr const char* kOff           = "关闭";
+inline constexpr const char* kRailTip       = "滚动鼠标滚轮、拖动此处或点击 ± 切换音域";
+inline constexpr const char* kKeyRangeTip   = "88 KEYS  ·  A0 — C8";
+inline constexpr const char* kPolyTip       = "同时支持多个音符";
+inline constexpr const char* kPlayingPrefix = "正在演奏 ";
+inline constexpr const char* kPlayingSuffix = " 个音符";
+
+// ---- 传输 ----
+inline constexpr const char* kRecordStart   = "开始录制";
+inline constexpr const char* kRecordStop    = "结束录制";
+inline constexpr const char* kPlayback      = "回放";
+inline constexpr const char* kStop          = "■ 停止";
+inline constexpr const char* kExportMidi    = "↓ 导出 MIDI";
+inline constexpr const char* kMetronome     = "节拍器";
+inline constexpr const char* kMetronomeOff  = "关闭节拍器";
+inline constexpr const char* kBpm           = "BPM";
+
+// ---- 曲目面板 ----
+inline constexpr const char* kSearchHint    = "搜索曲目";
+inline constexpr const char* kDiffAll       = "全部难度";
+inline constexpr const char* kDiffEasy      = "入门";
+inline constexpr const char* kDiffHard      = "进阶";
+inline constexpr const char* kFavAdd        = "☆ 收藏";
+inline constexpr const char* kFavRemove     = "★ 已收藏";
+inline constexpr const char* kFavOnly       = "只看收藏";
+inline constexpr const char* kPlaySong      = "播放曲目";
+inline constexpr const char* kStopSong      = "■ 停止曲目";
+inline constexpr const char* kExportSong    = "↓ 导出曲目";
+inline constexpr const char* kImportHint    = "导入：把 .mid 文件拖到窗口内";
+inline constexpr const char* kModeFull      = "完整播放";
+inline constexpr const char* kModeAccomp    = "仅伴奏跟练";
+inline constexpr const char* kModeGuide     = "节拍引导";
+inline constexpr const char* kSpeed         = "速度";
+inline constexpr const char* kTranspose     = "移调";
+inline constexpr const char* kMuteMelody    = "静音旋律";
+inline constexpr const char* kMuteAccomp    = "静音伴奏";
+inline constexpr const char* kFollowKey     = "跟随音域";
+inline constexpr const char* kSongIdle      = "请选择曲目开始自动播放";
+
+// ---- 跟练判定 ----
+inline constexpr const char* kJudgeTitle    = "跟练判定";
+inline constexpr const char* kPerfect       = "完美";
+inline constexpr const char* kGood          = "不错";
+inline constexpr const char* kMiss          = "漏音";
+inline constexpr const char* kExtra         = "多余";
+inline constexpr const char* kCombo         = "连击";
+inline constexpr const char* kAccuracy      = "准确率";
+inline constexpr const char* kScore         = "得分";
+
+// ---- 说明卡 ----
+// 注意：说明卡宽度有限（三栏布局），每行控制在 20 个汉字以内，
+// 用 \n 手动折行 —— raylib 的 DrawTextEx 不会自动换行。
+inline constexpr const char* kGuide1Title   = "电脑键盘演奏";
+inline constexpr const char* kGuide1Body    =
+    "下排 Z—M，上排 Q—P，\n黑键用 S、2 等。";
+inline constexpr const char* kGuide1Body2   = "空格临时延音，[ ] 升降八度。";
+inline constexpr const char* kGuide2Title   = "细腻触键体验";
+inline constexpr const char* kGuide2Body    =
+    "鼠标与多点触控，\n越靠近琴键下沿力度越强。";
+inline constexpr const char* kGuide2Body2   = "可滑奏、可和弦，松键自动止音。";
+inline constexpr const char* kGuide3Title   = "留住演奏灵感";
+inline constexpr const char* kGuide3Body    =
+    "一键录制回放，\n导出标准 MIDI 文件。";
+inline constexpr const char* kGuide3Body2   = "放入钢琴采样即可切换真实音色。";
+
+// ---- 页脚 ----
+inline constexpr const char* kFooter        =
+    "GRAND STUDIO · 让每个灵感，都有声音。   C++ / raylib / miniaudio 实现";
+
+// ---- 状态与提示 ----
+inline constexpr const char* kStatusReady   = "点击琴键，开始演奏";
+inline constexpr const char* kStatusAudioOk = "音频已就绪";
+inline constexpr const char* kStatusNoAudio = "音频设备不可用，界面仍可使用";
+inline constexpr const char* kToastRecordStart  = "录制已开始 · 尽情演奏";
+inline constexpr const char* kToastRecordEmpty  = "还没有录制到音符";
+inline constexpr const char* kToastRecordDone   = "录制完成，可以回放或导出 MIDI";
+inline constexpr const char* kToastPlayDone     = "回放结束";
+inline constexpr const char* kToastExported     = "MIDI 文件已导出";
+inline constexpr const char* kToastExportFail   = "导出失败";
+inline constexpr const char* kToastImportOk     = "MIDI 导入成功";
+inline constexpr const char* kToastImportFail   = "MIDI 导入失败";
+inline constexpr const char* kToastFavAdded     = "已加入收藏";
+inline constexpr const char* kToastFavRemoved   = "已取消收藏";
+inline constexpr const char* kToastNoSong       = "请先选择一首曲目";
+inline constexpr const char* kToastDragHint     = "把 .mid 文件拖进窗口即可导入";
+inline constexpr const char* kSampleNone        = "未找到采样，使用合成音色";
+inline constexpr const char* kSynthBadge        = "● 离线合成音色";
+
+inline const std::vector<std::string>& allStrings() {
+    static const std::vector<std::string> v = {
+        kWindowTitle, kBrandTitle, kBrandSub,
+        kEyebrow, kHeroLine1, kHeroAccent, kHeroDesc, kLiveSound,
+        kInstrument, kInstrumentSub, kEngineLabel, kEngineAuto, kEngineSample, kEngineSynth,
+        kVolumeLabel, kReverbLabel, kPedalLabel, kPedalWord, kOn, kOff,
+        kRailTip, kKeyRangeTip, kPolyTip, kPlayingPrefix, kPlayingSuffix,
+        kRecordStart, kRecordStop, kPlayback, kStop, kExportMidi,
+        kMetronome, kMetronomeOff, kBpm,
+        kSearchHint, kDiffAll, kDiffEasy, kDiffHard, kFavAdd, kFavRemove, kFavOnly,
+        kPlaySong, kStopSong, kExportSong, kImportHint,
+        kModeFull, kModeAccomp, kModeGuide,
+        kSpeed, kTranspose, kMuteMelody, kMuteAccomp, kFollowKey, kSongIdle,
+        kJudgeTitle, kPerfect, kGood, kMiss, kExtra, kCombo, kAccuracy, kScore,
+        kGuide1Title, kGuide1Body, kGuide1Body2,
+        kGuide2Title, kGuide2Body, kGuide2Body2,
+        kGuide3Title, kGuide3Body, kGuide3Body2,
+        kFooter,
+        kStatusReady, kStatusAudioOk, kStatusNoAudio,
+        kToastRecordStart, kToastRecordEmpty, kToastRecordDone, kToastPlayDone,
+        kToastExported, kToastExportFail, kToastImportOk, kToastImportFail,
+        kToastFavAdded, kToastFavRemoved, kToastNoSong, kToastDragHint,
+        kSampleNone, kSynthBadge,
+        // 采样徽标里的数字与单位
+        "组真实采样", "个采样锚点", "音源",
+        // 音符名、难度、以及曲目标题等运行时拼接用到的字符
+        "CDEFGAB",
+        // 装饰字形。
+        //
+        // 注意：微软雅黑（以及多数中文 Windows 字体）**不含** ▶(U+25B6)、
+        // ► ▷ ◀ ◁、♪ ♫ ♩ ♬、⌨(U+2328)、✦(U+2726) 这些符号 —— 请求了也拿不到字形，
+        // 界面上会显示成 '?'。实测可用的只有：△▽○●□■◇◆☆★※§◎ 以及箭头 ↓→−。
+        // 新增图标前务必先用 --screenshot 跑一次，看启动日志里的「不存在的码点」。
+        "◎−·×—■☆★↓→",
+    };
+    return v;
+}
+
+} // namespace ui
+} // namespace piano
