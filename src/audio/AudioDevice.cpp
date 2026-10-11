@@ -1,4 +1,5 @@
 #include "audio/AudioDevice.h"
+#include "ui/UiStrings.h"
 
 #include "audio/MaConfig.h"
 #include "miniaudio.h"
@@ -113,7 +114,7 @@ bool AudioDevice::open(Mixer& mixer, SchedulerFn scheduler, void* schedulerUser,
     auto* dev = new ma_device();
     const ma_result r = ma_device_init(nullptr, &cfg, dev);
     if (r != MA_SUCCESS) {
-        if (error) *error = "音频设备初始化失败：" + maResultText(r);
+        if (error) *error = std::string(ui::t(ui::kAudioInitFail)) + "：" + maResultText(r);
         delete dev;
         mixer_ = nullptr;
         scheduler_ = nullptr;
@@ -131,14 +132,14 @@ bool AudioDevice::open(Mixer& mixer, SchedulerFn scheduler, void* schedulerUser,
 
 bool AudioDevice::start(std::string* error) {
     if (!device_) {
-        if (error) *error = "音频设备尚未打开";
+        if (error) *error = ui::t(ui::kAudioNotOpen);
         return false;
     }
     if (running_) return true;
 
     const ma_result r = ma_device_start(device_);
     if (r != MA_SUCCESS) {
-        if (error) *error = "音频设备启动失败：" + maResultText(r);
+        if (error) *error = std::string(ui::t(ui::kAudioStartFail)) + "：" + maResultText(r);
         return false;
     }
     running_ = true;

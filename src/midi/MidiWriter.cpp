@@ -1,4 +1,5 @@
 #include "midi/MidiWriter.h"
+#include "ui/UiStrings.h"
 
 #include <algorithm>
 #include <cmath>
@@ -189,8 +190,8 @@ Song recordingToSong(const std::vector<RecordedEvent>& events,
                      const MidiWriteOptions& opts) {
     Song song;
     song.id         = "recording";
-    song.title      = "我的录制";
-    song.composer   = "本机录制";
+    song.title      = ui::t(ui::kMyRecording);
+    song.composer   = ui::t(ui::kLocalRecording);
     song.bpm        = opts.bpm > 0 ? opts.bpm : kDefaultBpm;
     song.ppq        = opts.ppq > 0 ? opts.ppq : kDefaultPpq;
     song.difficulty = 1;
@@ -241,12 +242,12 @@ Song recordingToSong(const std::vector<RecordedEvent>& events,
 bool saveMidiFile(const std::string& path, const std::vector<std::uint8_t>& bytes, std::string* error) {
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     if (!out) {
-        if (error) *error = "无法写入文件：" + path;
+        if (error) *error = std::string(ui::t(ui::kWriteFail)) + "：" + path;
         return false;
     }
     out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
     if (!out) {
-        if (error) *error = "写入过程中出错：" + path;
+        if (error) *error = std::string(ui::t(ui::kWriteError)) + "：" + path;
         return false;
     }
     return true;
@@ -255,12 +256,12 @@ bool saveMidiFile(const std::string& path, const std::vector<std::uint8_t>& byte
 bool saveMidiFile(const std::filesystem::path& path, const std::vector<std::uint8_t>& bytes, std::string* error) {
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     if (!out) {
-        if (error) *error = "无法写入文件：" + path.string();
+        if (error) *error = std::string(ui::t(ui::kWriteFail)) + "：" + path.string();
         return false;
     }
     out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
     if (!out) {
-        if (error) *error = "写入过程中出错：" + path.string();
+        if (error) *error = std::string(ui::t(ui::kWriteError)) + "：" + path.string();
         return false;
     }
     return true;

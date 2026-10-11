@@ -1,4 +1,5 @@
 #include "midi/MidiReader.h"
+#include "ui/UiStrings.h"
 
 #include <algorithm>
 #include <cmath>
@@ -62,17 +63,17 @@ std::uint32_t readU32(const std::uint8_t* p) {
 MidiParseResult parseMidi(const std::uint8_t* data, std::size_t size) {
     MidiParseResult out;
     if (!data || size < 14) {
-        out.error = "文件过小，不是有效的 MIDI 文件";
+        out.error = ui::t(ui::kMidiTooSmall);
         return out;
     }
     if (std::memcmp(data, "MThd", 4) != 0) {
-        out.error = "缺少 MThd 头，不是标准 MIDI 文件";
+        out.error = ui::t(ui::kMidiNoHeader);
         return out;
     }
 
     const std::uint32_t headerLen = readU32(data + 4);
     if (headerLen < 6) {
-        out.error = "MThd 块长度非法";
+        out.error = ui::t(ui::kMidiBadHeader);
         return out;
     }
 
@@ -81,7 +82,7 @@ MidiParseResult parseMidi(const std::uint8_t* data, std::size_t size) {
     const std::uint16_t ntrks    = head.u16();
     const std::uint16_t division = head.u16();
     if (!head.ok) {
-        out.error = "MThd 内容不完整";
+        out.error = ui::t(ui::kMidiIncomplete);
         return out;
     }
 
@@ -89,7 +90,7 @@ MidiParseResult parseMidi(const std::uint8_t* data, std::size_t size) {
     out.trackCount = ntrks;
 
     if (division & 0x8000) {
-        out.error = "暂不支持 SMPTE 时间码格式的 MIDI 文件";
+        out.error = ui::t(ui::kMidiSmpte);
         return out;
     }
     const int ppq = division > 0 ? division : kDefaultPpq;
@@ -241,7 +242,7 @@ MidiParseResult parseMidi(const std::uint8_t* data, std::size_t size) {
     }
 
     if (events.empty()) {
-        out.error = "文件中没有可播放的音符事件";
+        out.error = ui::t(ui::kMidiNoNotes);
         return out;
     }
 
@@ -249,7 +250,7 @@ MidiParseResult parseMidi(const std::uint8_t* data, std::size_t size) {
     bpm = std::max(40, std::min(240, bpm));
 
     out.song.id         = "import";
-    out.song.title      = title.empty() ? "导入的 MIDI" : title;
+    out.song.title      = title.empty() ? ui::t(ui::kImportedMidi) : title;
     out.song.composer   = "用户文件";
     out.song.bpm        = bpm;
     out.song.ppq        = ppq;

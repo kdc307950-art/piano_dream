@@ -66,7 +66,20 @@ inline const char* t(const char* chinese) {
         {"导出失败", "Export failed"}, {"MIDI 导入成功", "MIDI imported"}, {"MIDI 导入失败", "MIDI import failed"},
         {"已加入收藏", "Added to favorites"}, {"已取消收藏", "Removed from favorites"},
         {"请先选择一首曲目", "Select a song first"}, {"未找到采样，使用合成音色", "No samples found; using synth"},
-        {"● 离线合成音色", "● Offline synth"}, {"中", "中"}
+        {"● 离线合成音色", "● Offline synth"}, {"中", "中"},
+        {"文件过小，不是有效的 MIDI 文件", "File is too small; not a valid MIDI file"},
+        {"缺少 MThd 头，不是标准 MIDI 文件", "Missing MThd header; not a standard MIDI file"},
+        {"MThd 块长度非法", "Invalid MThd chunk length"}, {"MThd 内容不完整", "Incomplete MThd content"},
+        {"暂不支持 SMPTE 时间码格式的 MIDI 文件", "SMPTE time-code MIDI files are not supported"},
+        {"文件中没有可播放的音符事件", "The file contains no playable note events"},
+        {"无法打开文件", "Unable to open file"}, {"无法写入文件", "Unable to write file"},
+        {"写入过程中出错", "An error occurred while writing the file"},
+        {"音频设备初始化失败", "Audio device initialization failed"},
+        {"音频设备尚未打开", "Audio device is not open"}, {"音频设备启动失败", "Audio device failed to start"},
+        {"跟练中不能修改速度", "Speed cannot change during practice"},
+        {"跟练中不能修改移调", "Transpose cannot change during practice"},
+        {"没有匹配的曲目", "No matching songs"}, {"导入的 MIDI", "Imported MIDI"},
+        {"我的录制", "My recording"}, {"本机录制", "Local recording"}
     };
     const auto it = en.find(chinese);
     return it == en.end() ? chinese : it->second;
@@ -136,6 +149,26 @@ inline constexpr const char* kMuteAccomp    = "静音伴奏";
 inline constexpr const char* kFollowKey     = "跟随音域";
 inline constexpr const char* kSongIdle      = "请选择曲目开始自动播放";
 
+// ---- 导入、音频与跟练状态 ----
+inline constexpr const char* kMidiTooSmall = "文件过小，不是有效的 MIDI 文件";
+inline constexpr const char* kMidiNoHeader = "缺少 MThd 头，不是标准 MIDI 文件";
+inline constexpr const char* kMidiBadHeader = "MThd 块长度非法";
+inline constexpr const char* kMidiIncomplete = "MThd 内容不完整";
+inline constexpr const char* kMidiSmpte = "暂不支持 SMPTE 时间码格式的 MIDI 文件";
+inline constexpr const char* kMidiNoNotes = "文件中没有可播放的音符事件";
+inline constexpr const char* kMidiOpenFail = "无法打开文件";
+inline constexpr const char* kWriteFail = "无法写入文件";
+inline constexpr const char* kWriteError = "写入过程中出错";
+inline constexpr const char* kAudioInitFail = "音频设备初始化失败";
+inline constexpr const char* kAudioNotOpen = "音频设备尚未打开";
+inline constexpr const char* kAudioStartFail = "音频设备启动失败";
+inline constexpr const char* kPracticeSpeedLock = "跟练中不能修改速度";
+inline constexpr const char* kPracticeTransposeLock = "跟练中不能修改移调";
+inline constexpr const char* kNoMatchingSongs = "没有匹配的曲目";
+inline constexpr const char* kImportedMidi = "导入的 MIDI";
+inline constexpr const char* kMyRecording = "我的录制";
+inline constexpr const char* kLocalRecording = "本机录制";
+
 // ---- 跟练判定 ----
 inline constexpr const char* kJudgeTitle    = "跟练判定";
 inline constexpr const char* kPerfect       = "完美";
@@ -199,6 +232,10 @@ inline const std::vector<std::string>& allStrings() {
         kModeFull, kModeAccomp, kModeGuide,
         kSpeed, kTranspose, kMuteMelody, kMuteAccomp, kFollowKey, kSongIdle,
         kJudgeTitle, kPerfect, kGood, kMiss, kExtra, kCombo, kAccuracy, kScore,
+        kMidiTooSmall, kMidiNoHeader, kMidiBadHeader, kMidiIncomplete, kMidiSmpte, kMidiNoNotes,
+        kMidiOpenFail, kWriteFail, kWriteError, kAudioInitFail, kAudioNotOpen, kAudioStartFail,
+        kPracticeSpeedLock, kPracticeTransposeLock, kNoMatchingSongs, kImportedMidi,
+        kMyRecording, kLocalRecording,
         kGuide1Title, kGuide1Body, kGuide1Body2,
         kGuide2Title, kGuide2Body, kGuide2Body2,
         kGuide3Title, kGuide3Body, kGuide3Body2,

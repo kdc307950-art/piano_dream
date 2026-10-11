@@ -804,10 +804,10 @@ void App::drawSongPanel() {
         titles.reserve(songView_.size());
         for (int idx : songView_) {
             const Song& s = songs_[static_cast<std::size_t>(idx)];
-            const std::string title = fonts_.canRender(s.title) ? s.title : std::string("导入的 MIDI");
+            const std::string title = fonts_.canRender(s.title) ? s.title : std::string(ui::t(ui::kImportedMidi));
             titles.push_back(title + "  ·  " + std::to_string(s.bpm) + " BPM");
         }
-        if (titles.empty()) titles.push_back("（没有匹配的曲目）");
+        if (titles.empty()) titles.push_back(std::string("（") + ui::t(ui::kNoMatchingSongs) + "）");
 
         int sel = 0;
         for (std::size_t i = 0; i < songView_.size(); ++i)
@@ -857,7 +857,7 @@ void App::drawSongPanel() {
                            (num(speed_, 1) + "×").c_str(), sp, 0.5f, 1.5f)) {
             if (songPlaying_ && practiceMode_ != 0) {
                 speed_ = static_cast<float>(player_.speed());
-                toast("跟练中不能修改速度");
+                toast(ui::t(ui::kPracticeSpeedLock));
             } else {
                 speed_ = sp;
                 if (songPlaying_) player_.setSpeed(speed_);
@@ -871,7 +871,7 @@ void App::drawSongPanel() {
             transposeF_ = tr;
             if (songPlaying_ && practiceMode_ != 0) {
                 transposeF_ = static_cast<float>(player_.transpose());
-                toast("跟练中不能修改移调");
+                toast(ui::t(ui::kPracticeTransposeLock));
             } else {
                 player_.setTranspose(static_cast<int>(std::lround(transposeF_)));
             }
@@ -1115,7 +1115,7 @@ void App::importMidiFile(const std::string& path) {
     }
     Song s = r.song;
     s.id = "import-" + std::to_string(songs_.size());
-    if (!fonts_.canRender(s.title)) s.title = "导入的 MIDI";
+    if (!fonts_.canRender(s.title)) s.title = ui::t(ui::kImportedMidi);
 
     songs_.push_back(std::move(s));
     refreshSongList();

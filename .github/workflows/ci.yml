@@ -18,6 +18,9 @@ jobs:
       - name: Check generated glyphs
         shell: pwsh
         run: python tools/generate_glyphs.py --check
+      - name: Check English pseudo-localization budget
+        shell: pwsh
+        run: python tools/check_pseudo_localization.py
 
   linux:
     strategy:
