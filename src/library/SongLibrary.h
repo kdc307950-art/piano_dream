@@ -83,6 +83,13 @@ public:
     /// 标题净化：去控制字符、trim、按码点限长。公开以便测试。
     static std::string sanitizeTitle(const std::string& raw);
 
+    /// 严格 UTF-8 校验（拒绝孤立续字节、overlong、代理区、>U+10FFFF）。公开以便测试。
+    static bool isValidUtf8(const std::string& s);
+
+    /// 标题裁决（A2）：文件名 stem（UTF-8）优先；为空才退回轨名，且轨名必须是
+    /// 合法 UTF-8、不含 U+FFFD（挡住 GBK 等本地编码轨名污染索引）；再兜底 "imported"。
+    static std::string pickTitle(const std::string& stemUtf8, const std::string& trackTitle);
+
 private:
     bool saveIndex();
     bool readEntryBytes(const std::string& id, std::vector<std::uint8_t>& out) const;

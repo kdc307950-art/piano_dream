@@ -85,7 +85,14 @@ inline const char* t(const char* chinese) {
         {"已在曲库中", "Already in library"}, {"文件超过 1MB 上限", "File exceeds the 1MB limit"},
         {"曲库已满（500 首）", "Library is full (500 songs)"},
         {"音符数超过上限", "Note count exceeds the limit"},
-        {"曲库总容量已满", "Library storage is full"}, {"曲库写入失败", "Failed to write library"}
+        {"曲库总容量已满", "Library storage is full"}, {"曲库写入失败", "Failed to write library"},
+        {"导入 MIDI…", "Import MIDI…"}, {"选择旋律轨", "Choose melody track"},
+        {"轨", "Track"}, {"音符", "notes"}, {"音域", "Range"},
+        {"确认", "OK"}, {"取消", "Cancel"}, {"已取消导入", "Import cancelled"},
+        {"系统文件对话框不可用，请把 .mid 文件拖入窗口",
+         "System file dialog unavailable — drop .mid files into the window"},
+        {"导入 %d 首", "Imported %d"}, {"跳过 %d 首重复", "%d duplicates skipped"},
+        {"%d 个非 MIDI", "%d non-MIDI"}, {"失败 %d 个", "%d failed"}
     };
     const auto it = en.find(chinese);
     return it == en.end() ? chinese : it->second;
@@ -238,6 +245,21 @@ inline constexpr const char* kLibTooManyNotes = "音符数超过上限";
 inline constexpr const char* kLibFull         = "曲库总容量已满";
 inline constexpr const char* kLibIoError      = "曲库写入失败";
 
+// ---- 用户曲库 A2：⋯菜单 / 轨道选择模态 / 批量导入汇总 ----
+inline constexpr const char* kMenuImport        = "导入 MIDI…";
+inline constexpr const char* kTrackModalTitle   = "选择旋律轨";
+inline constexpr const char* kTrackWord         = "轨";
+inline constexpr const char* kTrackNotes        = "音符";
+inline constexpr const char* kTrackRange        = "音域";
+inline constexpr const char* kConfirm           = "确认";
+inline constexpr const char* kCancel            = "取消";
+inline constexpr const char* kToastImportCancel = "已取消导入";
+inline constexpr const char* kLibNoFileDialog   = "系统文件对话框不可用，请把 .mid 文件拖入窗口";
+inline constexpr const char* kImpSumImported    = "导入 %d 首";
+inline constexpr const char* kImpSumDup         = "跳过 %d 首重复";
+inline constexpr const char* kImpSumNonMidi     = "%d 个非 MIDI";
+inline constexpr const char* kImpSumFailed      = "失败 %d 个";
+
 inline const std::vector<std::string>& allStrings() {
     static const std::vector<std::string> v = {
         kWindowTitle, kBrandTitle, kBrandSub,
@@ -267,6 +289,9 @@ inline const std::vector<std::string>& allStrings() {
         kToastFavAdded, kToastFavRemoved, kToastNoSong, kToastDragHint,
         kSampleNone, kSynthBadge,
         kLibDuplicate, kLibTooLarge, kLibTooMany, kLibTooManyNotes, kLibFull, kLibIoError,
+        kMenuImport, kTrackModalTitle, kTrackWord, kTrackNotes, kTrackRange,
+        kConfirm, kCancel, kToastImportCancel, kLibNoFileDialog,
+        kImpSumImported, kImpSumDup, kImpSumNonMidi, kImpSumFailed,
         // 采样徽标里的数字与单位
         "组真实采样", "个采样锚点", "音源",
         // 音符名、难度、以及曲目标题等运行时拼接用到的字符

@@ -136,6 +136,41 @@ std::string SongLibrary::sanitizeTitle(const std::string& raw) {
     return (b == std::string::npos) ? std::string() : out.substr(b, e - b + 1);
 }
 
+bool SongLibrary::isValidUtf8(const std::string& s) {
+    for (std::size_t i = 0; i < s.size();) {
+        const unsigned char c = static_cast<unsigned char>(s[i]);
+        if (c < 0x80) { ++i; continue; }
+        std::size_t len;
+        unsigned long minCp;
+        if (c >= 0xC2 && c <= 0xDF)      { len = 2; minCp = 0x80; }
+        else if (c >= 0xE0 && c <= 0xEF) { len = 3; minCp = 0x800; }
+        else if (c >= 0xF0 && c <= 0xF4) { len = 4; minCp = 0x10000; }
+        else return false;                       // 孤立续字节 / 非法起始字节
+        if (i + len > s.size()) return false;    // 截断的序列
+        unsigned long cp = c & (0x7Fu >> len);
+        for (std::size_t k = 1; k < len; ++k) {
+            const unsigned char cc = static_cast<unsigned char>(s[i + k]);
+            if ((cc & 0xC0) != 0x80) return false;
+            cp = (cp << 6) | (cc & 0x3F);
+        }
+        if (cp < minCp) return false;                  // overlong
+        if (cp >= 0xD800 && cp <= 0xDFFF) return false; // 代理区
+        if (cp > 0x10FFFF) return false;
+        i += len;
+    }
+    return true;
+}
+
+std::string SongLibrary::pickTitle(const std::string& stemUtf8, const std::string& trackTitle) {
+    std::string t = sanitizeTitle(stemUtf8);
+    if (!isValidUtf8(t)) t.clear();
+    if (!t.empty()) return t;
+    t = sanitizeTitle(trackTitle);
+    if (!t.empty() && isValidUtf8(t) && t.find("\xEF\xBF\xBD") == std::string::npos)
+        return t;
+    return "imported";
+}
+
 // ---------------------------------------------------------------------------
 // 加载
 // ---------------------------------------------------------------------------
@@ -373,9 +408,14 @@ SongLibrary::AddResult SongLibrary::add(const std::filesystem::path& srcFile,
 
     Entry e;
     e.id = id;
-    e.title = sanitizeTitle(parsed.song.title);
-    if (e.title.empty()) e.title = sanitizeTitle(srcFile.stem().string());
-    if (e.title.empty()) e.title = "imported";
+    // 标题来源规则（A2）：文件名 stem 优先 —— stem().string() 在 Windows 会把
+    // 宽字符按 ANSI 窄转换（中文文件名变问号/乱码），必须走 u8string 再按字节拼回。
+    {
+        const auto stem8 = srcFile.stem().u8string();
+        e.title = pickTitle(std::string(reinterpret_cast<const char*>(stem8.data()),
+                                        stem8.size()),
+                            parsed.song.title);
+    }
     e.source = "user-import";
     e.hash = hash;
     e.bpm = parsed.song.bpm;

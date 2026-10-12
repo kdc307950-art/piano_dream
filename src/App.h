@@ -8,6 +8,8 @@
 //
 #include <cstdint>
 #include <filesystem>
+#include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -23,11 +25,13 @@
 #include "input/InputRouter.h"
 #include "input/KeyboardMap.h"
 #include "library/SongLibrary.h"
+#include "midi/MidiReader.h"
 #include "sequencer/Metronome.h"
 #include "sequencer/Player.h"
 #include "sequencer/PracticeJudge.h"
 #include "sequencer/RecordedPlayer.h"
 #include "sequencer/Recorder.h"
+#include "ui/FileDialog.h"
 #include "ui/FontBook.h"
 #include "ui/PianoView.h"
 #include "ui/Theme.h"
@@ -83,7 +87,18 @@ private:
     void stopPlayback();
     void exportRecordingMidi();
     void exportSongMidi();
-    void importMidiFile(const std::string& path);
+    /// 导入入口：读文件并解析，多含音符轨道的 Format 1 文件先弹轨道选择模态，
+    /// 否则直接 finishImport(path, nullopt)。
+    void beginImport(const std::filesystem::path& path);
+    /// 实际入库 + 界面反馈（ melodyTrack >= 0 时记为该曲的旋律轨）。
+    /// quiet=true 时不弹单文件 toast（批量导入由调用方汇总），返回结果码供计数。
+    SongLibrary::AddResult::Code finishImport(const std::filesystem::path& path,
+                                              std::optional<int> melodyTrack,
+                                              bool quiet = false);
+    /// ⋯菜单「导入 MIDI…」：弹系统文件对话框（pfd 异步模型，结果在 handleInput 轮询）。
+    void openImportDialog();
+    void drawTrackModal();
+    bool modalActive() const { return trackModalOpen_; }
     void refreshSongList();
     void selectSong(int index);
     /// 惰性加载：用户曲库条目首次被选中/播放时才解析 .mid 文件并填充 events。
@@ -167,6 +182,18 @@ private:
     // 下拉菜单
     bool dropdownOpen_ = false;
     int  dropdownId_ = 0;
+
+    // 轨道选择模态（导入多轨 MIDI 时弹出）
+    bool trackModalOpen_ = false;
+    std::filesystem::path trackModalPath_;
+    std::vector<int>      trackModalTracks_;   // 每行对应的原始轨号（仅含音符 ≥1 的轨）
+    std::vector<MidiParseResult::TrackStat> trackModalStats_;
+    int   trackModalSel_ = 0;                  // 行索引
+    float trackModalScroll_ = 0.0f;
+
+    // 系统文件对话框（存在即打开中；后端可用性一次性检测后缓存）
+    std::unique_ptr<FileDialog> importDialog_;
+    int pfdAvailable_ = -1;                    // -1 未检测，0/1 缓存
 
     // 波形显示
     std::vector<float> scope_;

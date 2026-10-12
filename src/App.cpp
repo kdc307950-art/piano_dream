@@ -47,6 +47,36 @@ std::string percent(float v) {
     return std::to_string(static_cast<int>(std::lround(v * 100.0f))) + "%";
 }
 
+/// .mid / .midi 扩展名判断（大小写不敏感）
+bool hasMidiExtension(const std::filesystem::path& p) {
+    std::string ext = p.extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return ext == ".mid" || ext == ".midi";
+}
+
+/// 带 %d 的文案模板填数
+std::string formatInt(const char* pattern, int v) {
+    char buf[96];
+    std::snprintf(buf, sizeof(buf), pattern, v);
+    return std::string(buf);
+}
+
+/// 批量导入汇总：「导入 N 首 · 跳过 M 首重复 · K 个非 MIDI · 失败 J 个」，按非零项组合
+std::string importSummary(int imported, int dup, int nonMidi, int failed) {
+    std::string out;
+    auto part = [&](const char* pattern, int v) {
+        if (v <= 0) return;
+        if (!out.empty()) out += " · ";
+        out += formatInt(pattern, v);
+    };
+    part(ui::t(ui::kImpSumImported), imported);
+    part(ui::t(ui::kImpSumDup), dup);
+    part(ui::t(ui::kImpSumNonMidi), nonMidi);
+    part(ui::t(ui::kImpSumFailed), failed);
+    return out;
+}
+
 void anchorWorkingDirectoryToExecutable() {
 #ifdef _WIN32
     wchar_t path[kMaxWindowsPath]{};
@@ -175,7 +205,7 @@ bool App::init(std::string* log) {
     input_.setKeyboardMap(&keyboardMap_);
     input_.setSink(this);
     input_.setHitTest([this](float x, float y, int& midi, float& vel) {
-        if (dropdownOpen_) return false;
+        if (dropdownOpen_ || trackModalOpen_) return false;
         return pianoView_.hitTest((x - viewOffset_.x) / viewScale_,
                                   (y - viewOffset_.y) / viewScale_, midi, vel);
     });
@@ -335,6 +365,8 @@ void App::run() {
 }
 
 void App::shutdown() {
+    // pfd 的 executor 析构会停等用户关框：退出前先强制关掉仍开着的文件对话框
+    if (importDialog_) { importDialog_->kill(); importDialog_.reset(); }
     player_.stop();
     recordedPlayer_.stop();
     device_.pushReleaseSource(Source::Playback);
@@ -467,15 +499,41 @@ void App::runFxDemoScript(int frame) {
 // ===========================================================================
 
 void App::handleInput(float dt) {
-    // 搜索框焦点决定电脑键盘是否用于演奏
-    input_.setKeyboardEnabled(!searchFocused_ && !dropdownOpen_);
+    // 搜索框焦点 / 下拉展开 / 模态弹窗时，电脑键盘不用于演奏
+    input_.setKeyboardEnabled(!searchFocused_ && !dropdownOpen_ && !trackModalOpen_);
 
     input_.update();
     pianoView_.updateScrollAnimation(dt);
 
+    // ---- 轨道选择模态的键盘确认/取消 ----
+    if (trackModalOpen_) {
+        if (IsKeyPressed(KEY_ENTER)) {
+            const int track = (trackModalSel_ >= 0 &&
+                               trackModalSel_ < static_cast<int>(trackModalTracks_.size()))
+                ? trackModalTracks_[static_cast<std::size_t>(trackModalSel_)] : -1;
+            const std::filesystem::path path = trackModalPath_;
+            trackModalOpen_ = false;
+            finishImport(path, track >= 0 ? std::optional<int>(track) : std::nullopt);
+        } else if (IsKeyPressed(KEY_ESCAPE)) {
+            trackModalOpen_ = false;
+            toast(ui::t(ui::kToastImportCancel));
+        }
+    }
+
+    // ---- 系统文件对话框（pfd）结果轮询 ----
+    if (importDialog_ && importDialog_->ready()) {
+        const std::vector<std::string> picked = importDialog_->result();
+        importDialog_.reset();
+        if (!picked.empty()) {
+            // pfd 返回 UTF-8 路径，按字节构造 fs::path，中文文件名不走 ANSI
+            const std::string& p = picked.front();
+            beginImport(std::filesystem::path(std::u8string(p.begin(), p.end())));
+        }
+    }
+
     // ---- 滚轮滚动琴键视口 ----
     const Vector2 mouse = ui_.mouse;
-    if (CheckCollisionPointRec(mouse, layout_.keys)) {
+    if (!dropdownOpen_ && !trackModalOpen_ && CheckCollisionPointRec(mouse, layout_.keys)) {
         const float wheel = GetMouseWheelMove();
         if (std::fabs(wheel) > 0.001f) pianoView_.scrollBy(-wheel * 90.0f);
     }
@@ -498,7 +556,26 @@ void App::handleInput(float dt) {
     // ---- 拖入 .mid 文件 ----
     if (IsFileDropped()) {
         const FilePathList files = LoadDroppedFiles();
-        for (unsigned i = 0; i < files.count; ++i) importMidiFile(files.paths[i]);
+        if (files.count == 1 && !trackModalOpen_) {
+            // 单文件：交互式导入（可能弹轨道选择模态；重复时定位已有条目）
+            const std::filesystem::path p(files.paths[0]);
+            if (hasMidiExtension(p)) beginImport(p);
+            else toast(formatInt(ui::t(ui::kImpSumNonMidi), 1));
+        } else {
+            // 批量：扩展名过滤 + 逐文件入库，最后汇总成一条 toast。
+            // 多轨文件在批量模式下不再逐个弹窗，旋律轨按自动判定。
+            int imported = 0, dup = 0, nonMidi = 0, failed = 0;
+            for (unsigned i = 0; i < files.count; ++i) {
+                const std::filesystem::path p(files.paths[i]);
+                if (!hasMidiExtension(p)) { ++nonMidi; continue; }
+                using Code = SongLibrary::AddResult::Code;
+                const Code c = finishImport(p, std::nullopt, true);
+                if (c == Code::Ok) ++imported;
+                else if (c == Code::Duplicate) ++dup;
+                else ++failed;
+            }
+            toast(importSummary(imported, dup, nonMidi, failed));
+        }
         UnloadDroppedFiles(files);
     }
 
@@ -626,6 +703,8 @@ void App::draw(float dt) {
     uiCamera.offset = viewOffset_;
     uiCamera.zoom = viewScale_;
     BeginMode2D(uiCamera);
+    // 模态开启时整帧吃掉背景控件的点击（模态自己的按钮用原始输入状态判定）
+    if (trackModalOpen_) ui_.consumedClick = true;
     // 背景：顶部暖金灯光 + 右下冷蓝反光 + 左下一点紫调，底部轻轻压暗（暗角）
     DrawCircleGradient({ layout_.w * 0.5f, -200.0f }, 1050.0f,
                        Color{ 92, 70, 38, 62 }, Color{ 10, 14, 22, 0 });
@@ -1016,15 +1095,8 @@ void App::drawSongPanel() {
     const float x = r.x + 14.0f;
     float y = r.y + 8.0f;
 
-    // 顶部控制行按用途分组，减少连续控件造成的视觉拥挤。
-    if (!compact) {
-        const Color groupLine{ 58, 72, 92, 150 };
-        DrawRectangleRoundedLinesEx({ x - 8.0f, y - 5.0f, 630.0f, 42.0f }, 0.12f, 6, 1.0f, groupLine);
-        DrawRectangleRoundedLinesEx({ x + 642.0f, y - 5.0f, 235.0f, 42.0f }, 0.12f, 6, 1.0f, groupLine);
-        DrawRectangleRoundedLinesEx({ x + 888.0f, y - 5.0f, 500.0f, 42.0f }, 0.12f, 6, 1.0f, groupLine);
-    }
-
-    // ---- 第一行 ----
+    // ---- 第一行：搜索 / 难度 / 曲名 / 播放 / 停止 / 收藏 / 模式 / ⋯ ----
+    // （导出曲目与只看收藏收进 ⋯ 菜单，消除非紧凑布局的横向溢出）
     {
         const float searchW = compact ? 150.0f : 190.0f;
         const float filterX = x + searchW + 12.0f;
@@ -1035,8 +1107,12 @@ void App::drawSongPanel() {
         const float playW = compact ? 90.0f : 108.0f;
         const float stopX = playX + playW + 12.0f;
         const float stopW = compact ? 90.0f : 108.0f;
-        const float exportX = stopX + stopW + 12.0f;
-        const float exportW = compact ? 100.0f : 120.0f;
+        const float favX = stopX + stopW + 12.0f;
+        const float favW = compact ? 96.0f : 108.0f;
+        const float modeX = favX + favW + 12.0f;
+        const float modeW = compact ? 140.0f : 160.0f;
+        const float moreX = modeX + modeW + 12.0f;
+        const float moreW = compact ? 36.0f : 40.0f;
         const Rectangle search{ x, y, searchW, 32.0f };
         widget::panel(search, searchFocused_ ? Color{ 26, 38, 55, 255 } : Color{ 19, 29, 43, 255 },
                       searchFocused_ ? theme::kGold : theme::kLineSoft, 0.28f);
@@ -1089,27 +1165,93 @@ void App::drawSongPanel() {
         if (widget::button(ui_, 3004, { stopX, y, stopW, 32.0f }, ui::t(ui::kStopSong), false, songPlaying_)) {
             stopSongPlayback();
         }
-        if (widget::button(ui_, 3005, { exportX, y, exportW, 32.0f }, ui::t(ui::kExportSong), false, !songs_.empty())) {
-            exportSongMidi();
+
+        const bool fav = isFavorite(songIndex_);
+        if (widget::button(ui_, 3007, { favX, y, favW, 32.0f },
+                           fav ? ui::t(ui::kFavRemove) : ui::t(ui::kFavAdd),
+                           false, !songs_.empty(), fav)) {
+            toggleFavorite(songIndex_);
         }
 
         const std::vector<std::string> modes{ ui::t(ui::kModeFull), ui::t(ui::kModeAccomp), ui::t(ui::kModeGuide) };
         int mi = practiceMode_;
-        if (!compact && widget::dropdown(ui_, 3006, { x + 1018.0f, y, 160.0f, 32.0f }, modes, mi, dropdownOpen_, dropdownId_)) {
+        if (widget::dropdown(ui_, 3006, { modeX, y, modeW, 32.0f }, modes, mi, dropdownOpen_, dropdownId_)) {
             practiceMode_ = mi;
             applyPracticeMode();
             if (mi == 0) judge_.reset();
             toast(modes[static_cast<std::size_t>(mi)]);
         }
 
-        const bool fav = isFavorite(songIndex_);
-        if (!compact && widget::button(ui_, 3007, { x + 1190.0f, y, 108.0f, 32.0f },
-                           fav ? ui::t(ui::kFavRemove) : ui::t(ui::kFavAdd), false, true, fav)) {
-            toggleFavorite(songIndex_);
+        // ⋯ 菜单按钮：画三个圆点，不依赖字体里有没有「⋯」字形
+        const Rectangle more{ moreX, y, moreW, 32.0f };
+        const bool menuOpen = dropdownOpen_ && dropdownId_ == 3011;
+        {
+            const bool mHover = ui_.hovered(more);
+            widget::panel(more,
+                          (mHover || menuOpen) ? Color{ 26, 38, 55, 255 } : Color{ 19, 29, 43, 255 },
+                          menuOpen ? theme::kGold
+                                   : (mHover ? Color{ 88, 104, 128, 255 } : theme::kLineSoft), 0.28f);
+            widget::bevel(more, 12, 20);
+            const float cxm = more.x + more.width * 0.5f;
+            const float cym = more.y + more.height * 0.5f;
+            for (int d = -1; d <= 1; ++d)
+                DrawCircleV({ cxm + static_cast<float>(d) * 8.0f, cym }, 2.2f,
+                            (mHover || menuOpen) ? theme::kGoldLight : theme::kMuted);
+            if (mHover && ui_.mousePressed && !ui_.consumedClick) {
+                ui_.consumedClick = true;
+                dropdownOpen_ = !menuOpen;
+                dropdownId_ = dropdownOpen_ ? 3011 : 0;
+                ui_.dropdownScroll = 0.0f;
+            }
         }
-        if (!compact && widget::checkbox(ui_, { x + 1310.0f, y, 130.0f, 32.0f }, ui::t(ui::kFavOnly), showFavoritesOnly_)) {
-            showFavoritesOnly_ = !showFavoritesOnly_;
-            refreshSongList();
+
+        // ⋯ 菜单：导入 MIDI… / 导出曲目 / 只看收藏
+        if (menuOpen) {
+            const std::vector<std::string> items{
+                ui::t(ui::kMenuImport), ui::t(ui::kExportSong), ui::t(ui::kFavOnly)
+            };
+            const float rowH = widget::kDropdownRowH;
+            const float listW = compact ? 168.0f : 190.0f;
+            const float listH = rowH * static_cast<float>(items.size()) + 8.0f;
+            Rectangle list{ more.x + more.width - listW, y + 36.0f, listW, listH };
+            if (list.x < r.x + 6.0f) list.x = r.x + 6.0f;
+            if (list.y + list.height > ui_.logicalHeight - 8.0f)
+                list.y = y - listH - 4.0f;
+
+            widget::panel(list, Color{ 15, 23, 35, 250 }, Color{ 62, 76, 96, 255 }, 0.08f);
+            int picked = -1;
+            for (int i = 0; i < static_cast<int>(items.size()); ++i) {
+                const Rectangle row{ list.x + 4.0f, list.y + 4.0f + rowH * static_cast<float>(i),
+                                     list.width - 8.0f, rowH };
+                const bool rowHover = ui_.hovered(row);
+                if (rowHover) {
+                    DrawRectangleRounded(row, 0.2f, 4, Color{ 213, 173, 106, 22 });
+                    DrawRectangleRounded({ row.x, row.y + 4.0f, 2.5f, row.height - 8.0f }, 1.0f, 2,
+                                         Color{ 213, 173, 106, 190 });
+                }
+                // 只看收藏是开关项：开启时该行用金色标出
+                const bool mark = (i == 2 && showFavoritesOnly_);
+                fonts_.drawSmall(items[static_cast<std::size_t>(i)].c_str(),
+                                 row.x + 8.0f, row.y + 7.0f,
+                                 mark ? theme::kGoldLight : theme::kInk);
+                if (rowHover && ui_.mousePressed) { picked = i; ui_.consumedClick = true; }
+            }
+            // 点击菜单外关闭
+            if (ui_.mousePressed && !ui_.consumedClick &&
+                !widget::pointIn(list, ui_.mouse) && !widget::pointIn(more, ui_.mouse)) {
+                dropdownOpen_ = false;
+                dropdownId_ = 0;
+                ui_.consumedClick = true;
+            }
+            // 复用下拉顶绘机制，让菜单浮在琴键与说明卡之上
+            ui_.deferredDropdowns.push_back({ list, items, showFavoritesOnly_ ? 2 : -1, 0.0f });
+            if (picked >= 0) {
+                dropdownOpen_ = false;
+                dropdownId_ = 0;
+                if (picked == 0) openImportDialog();
+                else if (picked == 1) exportSongMidi();
+                else { showFavoritesOnly_ = !showFavoritesOnly_; refreshSongList(); }
+            }
         }
     }
 
@@ -1261,8 +1403,7 @@ void App::drawFooter() {
 }
 
 void App::drawOverlays() {
-    if (toastTimer_ > 0.0f && !toastText_.empty()) {
-        const float tw = fonts_.bodyWidth(toastText_.c_str());
+    if (toastTimer_ > 0.0f && !toastText_.empty()) {        const float tw = fonts_.bodyWidth(toastText_.c_str());
         // Toast 放在曲目面板底部上方，避免覆盖说明卡和页脚；
         // 说明卡会随窗口高度调整，不能用固定的屏幕底部坐标。
         const float toastY = std::max(150.0f, layout_.guide.y - 42.0f);
@@ -1275,6 +1416,100 @@ void App::drawOverlays() {
                       Color{ 186, 146, 92, static_cast<unsigned char>(130 * alpha) }, 0.5f);
         fonts_.drawBody(toastText_.c_str(), t.x + 18.0f, t.y + 8.0f,
                         Color{ 30, 34, 42, a8 });
+    }
+    drawTrackModal();   // 模态永远画在最顶层
+}
+
+// ===========================================================================
+// 轨道选择模态（导入多轨 MIDI）
+// ===========================================================================
+
+void App::drawTrackModal() {
+    if (!trackModalOpen_) return;
+
+    // 遮罩：盖住整个逻辑画面
+    DrawRectangle(0, 0, static_cast<int>(layout_.w), static_cast<int>(layout_.h),
+                  Color{ 5, 9, 16, 178 });
+
+    const float rowH = 34.0f;
+    const int total = static_cast<int>(trackModalTracks_.size());
+    const int visible = std::max(1, std::min(total, 10));
+    const float panelW = 520.0f;
+    const float panelH = 60.0f + rowH * static_cast<float>(visible) + 66.0f;
+    const Rectangle box{ (layout_.w - panelW) * 0.5f, (layout_.h - panelH) * 0.5f,
+                         panelW, panelH };
+    widget::softShadow(box, 0.06f, 8.0f, 90);
+    widget::panel(box, Color{ 16, 25, 38, 255 }, theme::kLine, 0.06f);
+    fonts_.drawBody(ui::t(ui::kTrackModalTitle), box.x + 22.0f, box.y + 20.0f, theme::kInk);
+
+    // 轨道行：「轨 N · 音符 X · 音域 A0—C8」，限高 10 行 + 滚轮 + 细滚动条
+    const Rectangle rowsRect{ box.x + 14.0f, box.y + 52.0f,
+                              panelW - 28.0f, rowH * static_cast<float>(visible) };
+    const float maxScroll = rowH * static_cast<float>(std::max(0, total - visible));
+    if (maxScroll > 0.0f && widget::pointIn(rowsRect, ui_.mouse)) {
+        trackModalScroll_ -= GetMouseWheelMove() * rowH;
+        trackModalScroll_ = std::clamp(trackModalScroll_, 0.0f, maxScroll);
+    }
+    widget::scissorLogical(ui_, rowsRect);
+    for (int i = 0; i < total; ++i) {
+        const int trackNo = trackModalTracks_[static_cast<std::size_t>(i)];
+        const MidiParseResult::TrackStat& st = trackModalStats_[static_cast<std::size_t>(trackNo)];
+        const Rectangle row{ rowsRect.x,
+                             rowsRect.y + rowH * static_cast<float>(i) - trackModalScroll_,
+                             rowsRect.width, rowH - 4.0f };
+        if (row.y + row.height < rowsRect.y || row.y > rowsRect.y + rowsRect.height) continue;
+        const bool rowHover = ui_.hovered(row) && widget::pointIn(rowsRect, ui_.mouse);
+        const bool selRow = (i == trackModalSel_);
+        if (selRow || rowHover)
+            DrawRectangleRounded(row, 0.16f, 6,
+                                 selRow ? Color{ 150, 112, 58, 110 } : Color{ 213, 173, 106, 18 });
+        if (selRow)
+            DrawRectangleRoundedLinesEx(row, 0.16f, 6, 1.0f, Color{ 206, 162, 96, 255 });
+        std::string line = std::string(ui::t(ui::kTrackWord)) + " " + std::to_string(trackNo) +
+                           " · " + std::to_string(st.noteCount) + " " + ui::t(ui::kTrackNotes);
+        if (st.lowest >= 0)
+            line += std::string(" · ") + ui::t(ui::kTrackRange) + " " +
+                    noteName(st.lowest) + "—" + noteName(st.highest);
+        fonts_.drawSmall(line.c_str(), row.x + 12.0f, row.y + 10.0f,
+                         selRow ? theme::kGoldLight : theme::kInk);
+        if (rowHover && ui_.mousePressed) trackModalSel_ = i;
+    }
+    EndScissorMode();
+    widget::drawDropdownScrollbar(rowsRect, maxScroll, trackModalScroll_, visible, total);
+
+    // 确认 / 取消（背景点击已在模态开启时被整帧吃掉，这里直接用原始点击状态）
+    auto modalButton = [&](Rectangle br, const char* label, bool primary) {
+        const bool hov = ui_.hovered(br);
+        const bool press = hov && ui_.mouseDown;
+        const Color fill = primary
+            ? (press ? Color{ 210, 168, 106, 255 }
+               : hov ? Color{ 242, 203, 142, 255 } : Color{ 230, 188, 124, 255 })
+            : (press ? Color{ 19, 28, 41, 255 }
+               : hov ? Color{ 37, 52, 74, 255 } : Color{ 23, 33, 48, 255 });
+        const Color border = primary ? Color{ 198, 158, 96, 255 }
+                                     : (hov ? Color{ 88, 104, 128, 255 } : theme::kLineSoft);
+        widget::panel(br, fill, border, 0.22f);
+        const float tw = fonts_.bodyWidth(label);
+        fonts_.drawBody(label, br.x + (br.width - tw) * 0.5f, br.y + 9.0f,
+                        primary ? Color{ 32, 34, 38, 255 } : Color{ 222, 230, 240, 255 });
+        return hov && ui_.mousePressed;
+    };
+    const Rectangle okR{ box.x + panelW - 118.0f - 108.0f, box.y + panelH - 48.0f, 96.0f, 34.0f };
+    const Rectangle cancelR{ box.x + panelW - 118.0f, box.y + panelH - 48.0f, 96.0f, 34.0f };
+
+    const bool confirm = modalButton(okR, ui::t(ui::kConfirm), true);
+    const bool cancel  = modalButton(cancelR, ui::t(ui::kCancel), false) ||
+                         (ui_.mousePressed && !widget::pointIn(box, ui_.mouse));
+    if (confirm) {
+        const int track = (trackModalSel_ >= 0 &&
+                           trackModalSel_ < static_cast<int>(trackModalTracks_.size()))
+            ? trackModalTracks_[static_cast<std::size_t>(trackModalSel_)] : -1;
+        const std::filesystem::path path = trackModalPath_;
+        trackModalOpen_ = false;
+        finishImport(path, track >= 0 ? std::optional<int>(track) : std::nullopt);
+    } else if (cancel) {
+        trackModalOpen_ = false;
+        toast(ui::t(ui::kToastImportCancel));
     }
 }
 
@@ -1375,8 +1610,47 @@ void App::exportSongMidi() {
     }
 }
 
-void App::importMidiFile(const std::string& path) {
-    const SongLibrary::AddResult r = library_.add(std::filesystem::path(path), std::nullopt);
+void App::beginImport(const std::filesystem::path& path) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const std::uintmax_t size = fs::file_size(path, ec);
+    if (!ec && size <= SongLibrary::kMaxFileBytes) {
+        std::ifstream in(path, std::ios::binary);
+        const std::vector<std::uint8_t> bytes((std::istreambuf_iterator<char>(in)),
+                                              std::istreambuf_iterator<char>());
+        if (!bytes.empty()) {
+            const MidiParseResult pr = parseMidi(bytes.data(), bytes.size());
+            if (pr.ok && pr.format >= 1) {
+                // 含音符的轨道 ≥2 → 弹模态让用户选旋律轨，默认预选音符最多的轨
+                trackModalTracks_.clear();
+                for (std::size_t i = 0; i < pr.trackStats.size(); ++i)
+                    if (pr.trackStats[i].noteCount > 0)
+                        trackModalTracks_.push_back(static_cast<int>(i));
+                if (trackModalTracks_.size() >= 2) {
+                    int best = 0;
+                    for (std::size_t i = 1; i < trackModalTracks_.size(); ++i)
+                        if (pr.trackStats[static_cast<std::size_t>(trackModalTracks_[i])].noteCount >
+                            pr.trackStats[static_cast<std::size_t>(trackModalTracks_[best])].noteCount)
+                            best = static_cast<int>(i);
+                    trackModalPath_   = path;
+                    trackModalStats_  = pr.trackStats;
+                    trackModalSel_    = best;
+                    trackModalScroll_ = 0.0f;
+                    trackModalOpen_   = true;
+                    dropdownOpen_     = false;
+                    dropdownId_       = 0;
+                    searchFocused_    = false;
+                    return;
+                }
+            }
+        }
+    }
+    finishImport(path, std::nullopt);
+}
+
+SongLibrary::AddResult::Code App::finishImport(const std::filesystem::path& path,
+                                               std::optional<int> melodyTrack, bool quiet) {
+    const SongLibrary::AddResult r = library_.add(path, melodyTrack);
     using Code = SongLibrary::AddResult::Code;
 
     if (r.code == Code::Ok) {
@@ -1395,29 +1669,33 @@ void App::importMidiFile(const std::string& path) {
         }
         songs_.push_back(std::move(s));
         refreshSongList();
-        // 选中刚导入的曲目
-        for (std::size_t i = 0; i < songView_.size(); ++i) {
-            if (songView_[i] == static_cast<int>(songs_.size()) - 1) { selectSong(songView_[i]); break; }
+        if (!quiet) {
+            // 选中刚导入的曲目
+            for (std::size_t i = 0; i < songView_.size(); ++i) {
+                if (songView_[i] == static_cast<int>(songs_.size()) - 1) { selectSong(songView_[i]); break; }
+            }
+            toast(std::string(ui::t(ui::kToastImportOk)) + " · " + std::to_string(r.noteCount) + " 个音符");
+            setStatus(ui::t(ui::kToastImportOk));
         }
-        toast(std::string(ui::t(ui::kToastImportOk)) + " · " + std::to_string(r.noteCount) + " 个音符");
-        setStatus(ui::t(ui::kToastImportOk));
-        return;
+        return r.code;
     }
 
     if (r.code == Code::Duplicate) {
-        toast(ui::t(ui::kLibDuplicate));
-        // 清掉过滤条件，定位并选中已有条目
-        showFavoritesOnly_ = false;
-        searchText_.clear();
-        refreshSongList();
-        for (std::size_t i = 0; i < songs_.size(); ++i) {
-            if (songs_[i].id != r.id) continue;
-            for (int v : songView_) {
-                if (v == static_cast<int>(i)) { selectSong(v); break; }
+        if (!quiet) {
+            toast(ui::t(ui::kLibDuplicate));
+            // 清掉过滤条件，定位并选中已有条目
+            showFavoritesOnly_ = false;
+            searchText_.clear();
+            refreshSongList();
+            for (std::size_t i = 0; i < songs_.size(); ++i) {
+                if (songs_[i].id != r.id) continue;
+                for (int v : songView_) {
+                    if (v == static_cast<int>(i)) { selectSong(v); break; }
+                }
+                break;
             }
-            break;
         }
-        return;
+        return r.code;
     }
 
     std::string text;
@@ -1433,8 +1711,18 @@ void App::importMidiFile(const std::string& path) {
                (r.message.empty() ? "" : "：" + r.message);
         break;
     }
-    toast(text);
-    setStatus(text, true);
+    if (!quiet) { toast(text); setStatus(text, true); }
+    return r.code;
+}
+
+void App::openImportDialog() {
+    if (importDialog_) return;   // 已打开，忽略重复点击
+    if (pfdAvailable_ < 0) pfdAvailable_ = FileDialog::available() ? 1 : 0;
+    if (!pfdAvailable_) {
+        toast(ui::t(ui::kLibNoFileDialog));
+        return;
+    }
+    importDialog_ = std::make_unique<FileDialog>(ui::t(ui::kMenuImport));
 }
 
 void App::refreshSongList() {

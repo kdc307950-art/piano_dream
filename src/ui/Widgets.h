@@ -28,10 +28,12 @@ struct UiContext {
     float logicalHeight = 1000.0f;
     int  draggingSlider = 0;      // 0 = 无
     bool consumedClick = false;   // 本帧点击是否已被某个控件吃掉
+    float dropdownScroll = 0.0f;  // 当前展开的下拉列表滚动偏移（打开新下拉时归零）
     struct DeferredDropdown {
         Rectangle list{};
         std::vector<std::string> items;
         int index = -1;
+        float scroll = 0.0f;
     };
     std::vector<DeferredDropdown> deferredDropdowns;
 
@@ -244,6 +246,50 @@ inline bool slider(UiContext& ui, int id, Rectangle r, const char* label, const 
 }
 
 /// 下拉选择器。返回 true 表示选择发生了变化。
+inline constexpr float kDropdownRowH = 26.0f;
+inline constexpr int   kDropdownMaxRows = 10;   // 超出后滚轮滚动 + 右侧滚动条
+
+/// Mode2D 相机下 BeginScissorMode 要的是屏幕坐标，把逻辑矩形换算过去。
+inline void scissorLogical(const UiContext& ui, Rectangle r) {
+    BeginScissorMode(static_cast<int>(r.x * ui.scale + ui.offset.x),
+                     static_cast<int>(r.y * ui.scale + ui.offset.y),
+                     std::max(1, static_cast<int>(r.width * ui.scale)),
+                     std::max(1, static_cast<int>(r.height * ui.scale)));
+}
+
+/// 下拉列表的可见行布局：行高/限高/滚动偏移/翻转方向集中在这里，
+/// 交互绘制与帧末顶绘（drawDeferredDropdowns）共用同一套几何。
+struct DropdownListLayout {
+    Rectangle list{};
+    int visible = 0;      // 实际可见行数
+    float maxScroll = 0.0f;
+};
+inline DropdownListLayout dropdownListLayout(const UiContext& ui, Rectangle r,
+                                             std::size_t itemCount) {
+    DropdownListLayout L;
+    const int total = static_cast<int>(itemCount);
+    L.visible = std::max(1, std::min(total, kDropdownMaxRows));
+    const float listH = kDropdownRowH * static_cast<float>(L.visible) + 8.0f;
+    L.list = { r.x, r.y + r.height + 4.0f, r.width, listH };
+    if (L.list.y + L.list.height > ui.logicalHeight - 8.0f)
+        L.list.y = r.y - listH - 4.0f;
+    L.maxScroll = kDropdownRowH * static_cast<float>(std::max(0, total - L.visible));
+    return L;
+}
+
+inline void drawDropdownScrollbar(Rectangle list, float maxScroll, float scroll,
+                                  int visible, int total) {
+    if (maxScroll <= 0.0f || total <= 0) return;
+    const float trackH = list.height - 8.0f;
+    const float thumbH = std::max(18.0f, trackH * static_cast<float>(visible) /
+                                                 static_cast<float>(total));
+    const float thumbY = list.y + 4.0f + (trackH - thumbH) * (scroll / maxScroll);
+    DrawRectangleRounded({ list.x + list.width - 6.0f, list.y + 4.0f, 3.0f, trackH },
+                         1.0f, 4, Color{ 255, 255, 255, 16 });
+    DrawRectangleRounded({ list.x + list.width - 6.0f, thumbY, 3.0f, thumbH },
+                         1.0f, 4, Color{ 213, 173, 106, 150 });
+}
+
 inline bool dropdown(UiContext& ui, int id, Rectangle r, const std::vector<std::string>& items,
                      int& index, bool& open, int& openId) {
     bool changed = false;
@@ -264,39 +310,62 @@ inline bool dropdown(UiContext& ui, int id, Rectangle r, const std::vector<std::
         ui.consumedClick = true;
         open = !open || openId != id;
         openId = open ? id : 0;
+        if (open) {
+            // 打开时归零，再尽量把当前选中行滚进可视区
+            ui.dropdownScroll = 0.0f;
+            const DropdownListLayout L = dropdownListLayout(ui, r, items.size());
+            if (L.maxScroll > 0.0f && index >= 0) {
+                const float selTop = kDropdownRowH * static_cast<float>(index);
+                const float selBot = selTop + kDropdownRowH;
+                const float viewH = L.list.height - 8.0f;
+                if (selBot > viewH) ui.dropdownScroll = selBot - viewH;
+                ui.dropdownScroll = std::clamp(ui.dropdownScroll, 0.0f, L.maxScroll);
+            }
+        }
     }
 
     if (open && openId == id) {
-        const float rowH = 26.0f;
-        const float listH = rowH * static_cast<float>(items.size()) + 8.0f;
-        Rectangle list{ r.x, r.y + r.height + 4.0f, r.width, listH };
-        if (list.y + list.height > ui.logicalHeight - 8.0f)
-            list.y = r.y - listH - 4.0f;
+        const float rowH = kDropdownRowH;
+        const int total = static_cast<int>(items.size());
+        const DropdownListLayout L = dropdownListLayout(ui, r, items.size());
+        const Rectangle list = L.list;
+
+        // 超过 10 行：鼠标悬在列表上时滚轮滚动
+        if (L.maxScroll > 0.0f && pointIn(list, ui.mouse)) {
+            ui.dropdownScroll -= GetMouseWheelMove() * rowH;
+            ui.dropdownScroll = std::clamp(ui.dropdownScroll, 0.0f, L.maxScroll);
+        }
 
         DrawRectangleRounded(list, 0.08f, 6, Color{ 15, 23, 35, 250 });
         DrawRectangleRoundedLinesEx(list, 0.08f, 6, 1.0f, Color{ 62, 76, 96, 255 });
 
-        for (std::size_t i = 0; i < items.size(); ++i) {
-            const Rectangle row{ list.x + 4.0f, list.y + 4.0f + rowH * static_cast<float>(i),
+        const Rectangle inner{ list.x, list.y + 4.0f, list.width, list.height - 8.0f };
+        scissorLogical(ui, inner);
+        for (int i = 0; i < total; ++i) {
+            const Rectangle row{ list.x + 4.0f,
+                                 list.y + 4.0f + rowH * static_cast<float>(i) - ui.dropdownScroll,
                                  list.width - 8.0f, rowH };
-            const bool rowHover = ui.hovered(row);
+            if (row.y + row.height < inner.y || row.y > inner.y + inner.height) continue;
+            const bool rowHover = ui.hovered(row) && pointIn(inner, ui.mouse);
             if (rowHover) {
                 DrawRectangleRounded(row, 0.2f, 4, Color{ 213, 173, 106, 22 });
                 DrawRectangleRounded({ row.x, row.y + 4.0f, 2.5f, row.height - 8.0f }, 1.0f, 2,
                                      Color{ 213, 173, 106, 190 });
             }
             if (ui.fonts) {
-                const bool sel = (static_cast<int>(i) == index);
+                const bool sel = (i == index);
                 ui.fonts->drawSmall(items[i].c_str(), row.x + 8.0f, row.y + 7.0f,
                                     sel ? theme::kGoldLight : theme::kInk);
             }
             if (rowHover && ui.mousePressed) {
-                index = static_cast<int>(i);
+                index = i;
                 changed = true;
                 open = false;
                 ui.consumedClick = true;
             }
         }
+        EndScissorMode();
+        drawDropdownScrollbar(list, L.maxScroll, ui.dropdownScroll, L.visible, total);
         // 点击列表外关闭
         if (ui.mousePressed && !ui.consumedClick && !pointIn(list, ui.mouse) && !pointIn(r, ui.mouse)) {
             open = false;
@@ -304,7 +373,7 @@ inline bool dropdown(UiContext& ui, int id, Rectangle r, const std::vector<std::
         }
         // 记录一份副本，在整帧其它面板绘制完后再次绘制，确保菜单浮在琴键
         // 和说明卡之上。交互仍在这里处理，避免改变即时模式控件的时序。
-        ui.deferredDropdowns.push_back({ list, items, index });
+        ui.deferredDropdowns.push_back({ list, items, index, ui.dropdownScroll });
     }
     return changed;
 }
@@ -314,11 +383,16 @@ inline void drawDeferredDropdowns(UiContext& ui) {
         softShadow(dd.list, 0.08f, 4.0f, 64);
         DrawRectangleRounded(dd.list, 0.08f, 6, Color{ 15, 23, 35, 250 });
         DrawRectangleRoundedLinesEx(dd.list, 0.08f, 6, 1.0f, Color{ 62, 76, 96, 255 });
-        constexpr float rowH = 26.0f;
+        constexpr float rowH = kDropdownRowH;
+        const Rectangle inner{ dd.list.x, dd.list.y + 4.0f,
+                               dd.list.width, dd.list.height - 8.0f };
+        scissorLogical(ui, inner);
         for (std::size_t i = 0; i < dd.items.size(); ++i) {
-            const Rectangle row{ dd.list.x + 4.0f, dd.list.y + 4.0f + rowH * static_cast<float>(i),
+            const Rectangle row{ dd.list.x + 4.0f,
+                                 dd.list.y + 4.0f + rowH * static_cast<float>(i) - dd.scroll,
                                  dd.list.width - 8.0f, rowH };
-            const bool rowHover = ui.hovered(row);
+            if (row.y + row.height < inner.y || row.y > inner.y + inner.height) continue;
+            const bool rowHover = ui.hovered(row) && pointIn(inner, ui.mouse);
             if (rowHover) {
                 DrawRectangleRounded(row, 0.2f, 4, Color{ 213, 173, 106, 22 });
                 DrawRectangleRounded({ row.x, row.y + 4.0f, 2.5f, row.height - 8.0f }, 1.0f, 2,
@@ -330,6 +404,11 @@ inline void drawDeferredDropdowns(UiContext& ui) {
                                     sel ? theme::kGoldLight : theme::kInk);
             }
         }
+        EndScissorMode();
+        const int total = static_cast<int>(dd.items.size());
+        const int visible = std::max(1, std::min(total, kDropdownMaxRows));
+        const float maxScroll = rowH * static_cast<float>(std::max(0, total - visible));
+        drawDropdownScrollbar(dd.list, maxScroll, dd.scroll, visible, total);
     }
 }
 

@@ -35,7 +35,8 @@ add_library(piano_objs OBJECT ${PIANO_SOURCES})
 target_include_directories(piano_objs PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/raylib/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/miniaudio")
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/miniaudio"
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/portable-file-dialogs")
 
 # --------------------------------------------------------------------- raylib
 #
@@ -88,7 +89,8 @@ foreach(tgt piano piano-cli)
     target_include_directories(${tgt} PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
         "${CMAKE_CURRENT_SOURCE_DIR}/third_party/raylib/include"
-        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/miniaudio")
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/miniaudio"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/portable-file-dialogs")
     target_link_libraries(${tgt} PRIVATE ${PIANO_RAYLIB_TARGET})
 endforeach()
 

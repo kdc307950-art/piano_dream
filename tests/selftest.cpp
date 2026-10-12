@@ -1153,10 +1153,11 @@ void testSongLibrary() {
         const SongLibrary::AddResult r = lib.add(src, std::nullopt);
         check(r.ok(), "f: 含脏标题的 MIDI 可入库");
         const SongLibrary::Entry* e = lib.find(r.id);
+        // A2 起标题取文件名 stem 优先，轨名只在 stem 为空时兜底
+        check(e && e->title == "t", "f: 标题取文件名 stem（A2 规则）");
         const std::string expected = SongLibrary::sanitizeTitle(rawTitle);
-        check(e && e->title == expected, "f: 标题已净化（去控制字符/trim）");
         check(expected.find('\n') == std::string::npos &&
-              expected.find('\x01') == std::string::npos, "f: 净化结果无控制字符");
+              expected.find('\x01') == std::string::npos, "f: sanitizeTitle 去控制字符/trim");
         // 文件名只用 id：目录里除索引与源文件外只有 <id>.mid
         bool onlyIdFiles = true;
         for (const auto& de : fs::directory_iterator(dir, ec)) {
@@ -1165,21 +1166,55 @@ void testSongLibrary() {
                 fn != r.id + ".mid") onlyIdFiles = false;
         }
         check(onlyIdFiles, "f: 曲库文件名只用 id（无标题命名的文件）");
+        // 索引转义改走 rename 注入 | 与 \（stem 里不可能含这两个字符）
+        check(lib.rename(r.id, "A|B\\C"), "f: rename 注入需转义的字符");
         const std::string idx = readTextFile(dir / "index.txt");
-        check(idx.find("\\|") != std::string::npos && idx.find("\\\\") != std::string::npos,
+        check(idx.find("A\\|B\\\\C") != std::string::npos,
               "f: 索引中的 | 和 \\ 已转义（换行在净化阶段已去除，进不了索引）");
         SongLibrary lib2;
         lib2.load(dir);
         const SongLibrary::Entry* e2 = lib2.find(r.id);
-        check(e2 && e2->title == expected, "f: 转义往返后标题一致");
+        check(e2 && e2->title == "A|B\\C", "f: 转义往返后标题一致");
 
         // ---- k. collectTitleChars 覆盖条目标题字符 ----
         const std::string chars = lib2.collectTitleChars();
         bool covers = true;
-        for (const char c : expected)
+        for (const char c : std::string("A|B\\C"))
             if (chars.find(c) == std::string::npos) { covers = false; break; }
-        check(covers && chars.find("中") != std::string::npos,
-              "k: collectTitleChars 覆盖标题全部字符");
+        check(covers, "k: collectTitleChars 覆盖标题全部字符");
+    }
+
+    // ---- l. 标题裁决（A2）：stem 优先 / GBK 轨名拒绝 / isValidUtf8 ----------
+    {
+        check(SongLibrary::isValidUtf8("中文 en \xF0\x9F\x8E\xB9"), "l: 合法 UTF-8 通过");
+        check(!SongLibrary::isValidUtf8("\x80"), "l: 孤立续字节拒绝");
+        check(!SongLibrary::isValidUtf8("\xC0\x80"), "l: overlong 拒绝");
+        check(!SongLibrary::isValidUtf8("\xED\xA0\x80"), "l: 代理区拒绝");
+        check(!SongLibrary::isValidUtf8("\xE4\xB8"), "l: 截断序列拒绝");
+        const std::string gbk = "\xC4\xE3\xBA\xC3";   // GBK「你好」，非法 UTF-8
+        check(!SongLibrary::isValidUtf8(gbk), "l: GBK 字节序列被识别为非法 UTF-8");
+
+        check(SongLibrary::pickTitle("歌名", "whatever") == "歌名", "l: stem 优先于轨名");
+        check(SongLibrary::pickTitle("  ", "轨名") == "轨名", "l: stem 净化为空时退回轨名");
+        check(SongLibrary::pickTitle("", gbk) == "imported", "l: GBK 轨名兜底 imported");
+        check(SongLibrary::pickTitle("", "abc\xEF\xBF\xBD" "def") == "imported",
+              "l: 含 U+FFFD 的轨名兜底 imported");
+
+        // 真实 add：GBK 轨名 + 中文文件名 → 标题来自文件名，非法字节不进 index.txt
+        const fs::path dir = base / "l";
+        fs::create_directories(dir, ec);
+        const std::vector<std::uint8_t> gbkMidi = makeTestMidiTitled(gbk);
+        const fs::path src = dir / fs::path(std::u8string(u8"gbk曲.mid"));
+        writeBytesTo(src, gbkMidi);
+        SongLibrary lib;
+        lib.load(dir);
+        const SongLibrary::AddResult r = lib.add(src, std::nullopt);
+        check(r.ok(), "l: GBK 轨名 MIDI 可入库");
+        const SongLibrary::Entry* e = lib.find(r.id);
+        check(e && e->title == "gbk曲", "l: 标题来自文件名 stem 而非 GBK 轨名");
+        const std::string idx = readTextFile(dir / "index.txt");
+        check(idx.find('\xC4') == std::string::npos && idx.find('\xBA') == std::string::npos,
+              "l: GBK 字节未写入 index.txt");
     }
 
     // ---- g. 超限拒绝 --------------------------------------------------------
