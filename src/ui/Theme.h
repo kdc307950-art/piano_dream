@@ -9,6 +9,8 @@
 
 #include "raylib.h"
 
+#include "fx/FxTokens.h"
+
 namespace piano {
 
 namespace theme {
@@ -33,15 +35,16 @@ inline constexpr Color kWarn      = { 231, 177, 111, 255 };
 inline constexpr Color kBad       = { 238, 119, 119, 255 };
 
 // ---- 琴键 ----
-inline constexpr Color kWhiteKeyTop   = { 184, 187, 193, 255 };
-inline constexpr Color kWhiteKeyMid   = { 255, 255, 255, 255 };
-inline constexpr Color kWhiteKeyBot   = { 191, 196, 202, 255 };
-inline constexpr Color kWhiteKeyEdge  = { 159, 163, 170, 255 };
-inline constexpr Color kWhiteKeyActive= { 235, 200, 140, 255 };
-inline constexpr Color kBlackKeyTop   = {   6,   8,  11, 255 };
-inline constexpr Color kBlackKeyMid   = {  45,  51,  62, 255 };
-inline constexpr Color kBlackKeyBot   = {   0,   0,   0, 255 };
-inline constexpr Color kBlackKeyActive= { 187, 143,  81, 255 };
+// 白键取象牙暖白（真琴键不是冷白），黑键取漆面深蓝黑并留出高光余地。
+inline constexpr Color kWhiteKeyTop   = { 253, 251, 246, 255 };
+inline constexpr Color kWhiteKeyMid   = { 246, 243, 237, 255 };
+inline constexpr Color kWhiteKeyBot   = { 230, 226, 218, 255 };
+inline constexpr Color kWhiteKeyEdge  = { 172, 166, 156, 255 };
+inline constexpr Color kWhiteKeyActive= { 250, 228, 180, 255 };
+inline constexpr Color kBlackKeyTop   = {  62,  68,  80, 255 };
+inline constexpr Color kBlackKeyMid   = {  30,  34,  42, 255 };
+inline constexpr Color kBlackKeyBot   = {   8,  10,  14, 255 };
+inline constexpr Color kBlackKeyActive= { 178, 130,  68, 255 };
 
 } // namespace theme
 
@@ -58,6 +61,7 @@ struct UiLayout {
     Rectangle controls{};
     Rectangle rail{};
     Rectangle keys{};
+    Rectangle fxStage{};   // 「按键飘出音符」舞台带（键盘上方），fxEnabled=false 时为空
     Rectangle bottom{};
     Rectangle transport{};
     Rectangle timeline{};
@@ -71,6 +75,8 @@ struct UiLayout {
     float keyH   = 220.0f;
     float blackW = 24.0f;
     float blackH = 139.0f;
+
+    bool fxEnabled = false;   // 特效舞台带开关；关闭时布局与引入本特性前逐像素一致
 
     void compute(float width, float height) {
         w = width < 1100.0f ? 1100.0f : width;
@@ -96,7 +102,19 @@ struct UiLayout {
 
         const float below = 34.0f + 50.0f + 12.0f + 24.0f + 150.0f; // 为曲目面板预留空间
         const float avail = console.y + console.height - 14.0f - y - below;
-        keyH   = std::clamp(avail, 150.0f, 300.0f);
+
+        // 特效舞台带：从剩余垂直空间（扣掉琴键最小高度）中划出，位于键盘上方。
+        // 关闭时 fxStage 为空，下面所有几何与引入本特性前完全一致。
+        if (fxEnabled) {
+            fxStage = { x, y, cw,
+                        std::clamp(avail - 150.0f, theme::fx::kStageMinHeight,
+                                   theme::fx::kStageMaxHeight) };
+            y += fxStage.height + 8.0f;
+        } else {
+            fxStage = Rectangle{};
+        }
+
+        keyH   = std::clamp(avail - (fxEnabled ? fxStage.height + 8.0f : 0.0f), 150.0f, 300.0f);
         blackH = keyH * 0.633f;
         keyW   = std::clamp(cw / 52.0f, 14.0f, 32.0f);
         blackW = keyW * 0.636f;

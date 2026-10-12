@@ -79,7 +79,9 @@ inline const char* t(const char* chinese) {
         {"跟练中不能修改速度", "Speed cannot change during practice"},
         {"跟练中不能修改移调", "Transpose cannot change during practice"},
         {"没有匹配的曲目", "No matching songs"}, {"导入的 MIDI", "Imported MIDI"},
-        {"我的录制", "My recording"}, {"本机录制", "Local recording"}
+        {"我的录制", "My recording"}, {"本机录制", "Local recording"},
+        {"音符特效", "Notes FX"}, {"关", "Off"}, {"少", "Low"},
+        {"标准", "Standard"}, {"多", "High"}, {"减少动态效果", "Reduced motion"}
     };
     const auto it = en.find(chinese);
     return it == en.end() ? chinese : it->second;
@@ -111,6 +113,12 @@ inline constexpr const char* kPedalLabel    = "延音踏板";
 inline constexpr const char* kPedalWord     = "踏板";
 inline constexpr const char* kOn            = "开启";
 inline constexpr const char* kOff           = "关闭";
+inline constexpr const char* kFxLabel         = "音符特效";
+inline constexpr const char* kFxOff           = "关";
+inline constexpr const char* kFxLow           = "少";
+inline constexpr const char* kFxStandard      = "标准";
+inline constexpr const char* kFxHigh          = "多";
+inline constexpr const char* kFxReducedMotion = "减少动态效果";
 inline constexpr const char* kRailTip       = "滚动鼠标滚轮、拖动此处或点击 ± 切换音域";
 inline constexpr const char* kKeyRangeTip   = "88 KEYS  ·  A0 — C8";
 inline constexpr const char* kPolyTip       = "同时支持多个音符";
@@ -224,6 +232,7 @@ inline const std::vector<std::string>& allStrings() {
         kEyebrow, kHeroLine1, kHeroAccent, kHeroDesc, kLiveSound,
         kInstrument, kInstrumentSub, kEngineLabel, kEngineAuto, kEngineSample, kEngineSynth,
         kVolumeLabel, kReverbLabel, kPedalLabel, kPedalWord, kOn, kOff,
+        kFxLabel, kFxOff, kFxLow, kFxStandard, kFxHigh, kFxReducedMotion,
         kRailTip, kKeyRangeTip, kPolyTip, kPlayingPrefix, kPlayingSuffix,
         kRecordStart, kRecordStop, kPlayback, kStop, kExportMidi,
         kMetronome, kMetronomeOff, kBpm,

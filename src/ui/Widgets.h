@@ -54,6 +54,29 @@ namespace widget {
 
 inline bool pointIn(Rectangle r, Vector2 p) { return CheckCollisionPointRec(p, r); }
 
+/// 柔和投影：三层圆角矩形叠出弥散阴影，让面板「浮」在背景上。
+inline void softShadow(Rectangle r, float roundness = 0.14f, float offsetY = 5.0f,
+                       unsigned char alpha = 42) {
+    const float grow[3] = { 2.0f, 5.0f, 9.0f };
+    const float fade[3] = { 0.60f, 0.32f, 0.15f };
+    for (int i = 2; i >= 0; --i) {
+        const float g = grow[i];
+        const Rectangle layer{ r.x - g, r.y + offsetY + g * 0.35f, r.width + g * 2.0f, r.height };
+        DrawRectangleRounded(layer, roundness, 8,
+                             Color{ 0, 0, 0, static_cast<unsigned char>(alpha * fade[i]) });
+    }
+}
+
+/// 顶部一道高光 + 底部一道内阴影，给平面控件一点细腻的体积感。
+inline void bevel(Rectangle r, unsigned char topAlpha = 24, unsigned char bottomAlpha = 28) {
+    if (topAlpha > 0)
+        DrawRectangleRounded({ r.x + 2.0f, r.y + 1.0f, r.width - 4.0f, 1.0f }, 1.0f, 2,
+                             Color{ 255, 255, 255, topAlpha });
+    if (bottomAlpha > 0)
+        DrawRectangleRounded({ r.x + 2.0f, r.y + r.height - 2.0f, r.width - 4.0f, 1.0f }, 1.0f, 2,
+                             Color{ 0, 0, 0, bottomAlpha });
+}
+
 inline void panel(Rectangle r, Color fill, Color border, float roundness = 0.14f) {
     DrawRectangleRounded(r, roundness, 8, fill);
     if (border.a > 0) DrawRectangleRoundedLinesEx(r, roundness, 8, 1.0f, border);
@@ -64,27 +87,39 @@ inline bool button(UiContext& ui, int id, Rectangle r, const char* label,
                    bool primary = false, bool enabled = true, bool active = false) {
     (void)id;
     const bool hover = enabled && ui.hovered(r);
+    const bool press = hover && ui.mouseDown;
 
     Color fill, border, text;
     if (!enabled) {
-        fill = Color{ 26, 35, 48, 255 };
-        border = theme::kLine;
-        text = Color{ 110, 122, 140, 140 };
+        fill = Color{ 23, 31, 43, 255 };
+        border = Color{ 38, 48, 62, 255 };
+        text = Color{ 105, 116, 132, 130 };
     } else if (primary) {
-        fill = hover ? Color{ 241, 204, 146, 255 } : Color{ 232, 191, 130, 255 };
-        border = Color{ 222, 192, 139, 255 };
-        text = Color{ 25, 32, 43, 255 };
+        fill = press ? Color{ 210, 168, 106, 255 }
+             : hover ? Color{ 242, 203, 142, 255 } : Color{ 230, 188, 124, 255 };
+        border = Color{ 198, 158, 96, 255 };
+        text = Color{ 32, 34, 38, 255 };
+        // 主按钮下方垫一层暖金光晕，像是被灯光托起来
+        DrawRectangleRounded({ r.x, r.y + 3.0f, r.width, r.height }, 0.22f, 8,
+                             Color{ 198, 152, 88, static_cast<unsigned char>(hover ? 44 : 26) });
     } else if (active) {
-        fill = Color{ 121, 90, 47, 120 };
-        border = Color{ 184, 141, 83, 255 };
+        fill = press ? Color{ 150, 112, 58, 150 } : Color{ 150, 112, 58, 104 };
+        border = Color{ 206, 162, 96, 255 };
         text = theme::kGoldLight;
     } else {
-        fill = hover ? Color{ 36, 50, 71, 255 } : Color{ 24, 35, 51, 255 };
-        border = theme::kLineSoft;
-        text = Color{ 219, 227, 236, 255 };
+        fill = press ? Color{ 19, 28, 41, 255 }
+             : hover ? Color{ 37, 52, 74, 255 } : Color{ 23, 33, 48, 255 };
+        border = hover ? Color{ 88, 104, 128, 255 } : theme::kLineSoft;
+        text = Color{ 222, 230, 240, 255 };
     }
 
     panel(r, fill, border, 0.22f);
+    if (enabled) bevel(r, primary ? 70 : 14, primary ? 30 : 22);
+    if (active && enabled) {
+        // 激活态：上半部一层薄金色光泽
+        DrawRectangleRounded({ r.x + 1.5f, r.y + 1.5f, r.width - 3.0f, r.height * 0.5f }, 0.2f, 6,
+                             Color{ 255, 226, 170, 18 });
+    }
 
     const float tw = ui.fonts ? ui.fonts->bodyWidth(label) : static_cast<float>(MeasureText(label, 10));
     const float th = 16.0f;
@@ -104,10 +139,15 @@ inline bool button(UiContext& ui, int id, Rectangle r, const char* label,
 /// 小尺寸按钮（用于八度 ±、视图缩放等）。
 inline bool smallButton(UiContext& ui, Rectangle r, const char* label, bool active = false) {
     const bool hover = ui.hovered(r);
-    Color fill = active ? Color{ 121, 90, 47, 120 } : (hover ? Color{ 36, 50, 71, 255 } : Color{ 22, 33, 48, 255 });
-    Color border = active ? Color{ 184, 141, 83, 255 } : theme::kLineSoft;
-    Color text = active ? theme::kGoldLight : Color{ 222, 231, 241, 255 };
+    const bool press = hover && ui.mouseDown;
+    Color fill = active ? (press ? Color{ 150, 112, 58, 150 } : Color{ 150, 112, 58, 104 })
+                        : (press ? Color{ 18, 27, 40, 255 }
+                           : hover ? Color{ 35, 50, 72, 255 } : Color{ 20, 30, 44, 255 });
+    Color border = active ? Color{ 206, 162, 96, 255 }
+                          : (hover ? Color{ 88, 104, 128, 255 } : theme::kLineSoft);
+    Color text = active ? theme::kGoldLight : Color{ 224, 232, 242, 255 };
     panel(r, fill, border, 0.3f);
+    bevel(r, 12, 20);
     const float tw = ui.fonts ? ui.fonts->bodyWidth(label) : 8.0f;
     const float tx = r.x + (r.width - tw) * 0.5f;
     const float ty = r.y + (r.height - 16.0f) * 0.5f + 1.0f;
@@ -125,14 +165,16 @@ inline bool checkbox(UiContext& ui, Rectangle r, const char* label, bool value) 
     const Rectangle boxRect{ r.x, r.y + (r.height - box) * 0.5f, box, box };
     const bool hover = ui.hovered(r);
 
-    panel(boxRect, value ? Color{ 215, 173, 104, 255 } : Color{ 21, 31, 46, 255 },
-          value ? Color{ 246, 210, 150, 255 } : theme::kLineSoft, 0.3f);
+    panel(boxRect, value ? Color{ 224, 184, 118, 255 } : Color{ 18, 28, 42, 255 },
+          value ? Color{ 246, 210, 150, 255 }
+                : (hover ? Color{ 150, 128, 88, 255 } : theme::kLineSoft), 0.3f);
     if (value) {
+        bevel(boxRect, 60, 26);
         const Vector2 a{ boxRect.x + 3.5f, boxRect.y + 7.5f };
         const Vector2 b{ boxRect.x + 6.5f, boxRect.y + 10.5f };
         const Vector2 c{ boxRect.x + 11.5f, boxRect.y + 4.0f };
-        DrawLineEx(a, b, 2.0f, Color{ 25, 32, 43, 255 });
-        DrawLineEx(b, c, 2.0f, Color{ 25, 32, 43, 255 });
+        DrawLineEx(a, b, 2.2f, Color{ 32, 34, 38, 255 });
+        DrawLineEx(b, c, 2.2f, Color{ 32, 34, 38, 255 });
     }
     if (ui.fonts) ui.fonts->drawSmall(label, boxRect.x + box + 7.0f,
                                       r.y + (r.height - 13.0f) * 0.5f,
@@ -177,15 +219,27 @@ inline bool slider(UiContext& ui, int id, Rectangle r, const char* label, const 
     }
 
     const float t = (hi > lo) ? std::clamp((value - lo) / (hi - lo), 0.0f, 1.0f) : 0.0f;
-    DrawRectangleRounded(track, 1.0f, 6, Color{ 52, 67, 87, 255 });
+    // 内凹轨道：深色底 + 底部一道细高光，像嵌进面板里
+    DrawRectangleRounded(track, 1.0f, 6, Color{ 36, 46, 60, 255 });
+    DrawRectangleRounded({ track.x + 1.0f, track.y + track.height, track.width - 2.0f, 1.0f },
+                         1.0f, 2, Color{ 255, 255, 255, 10 });
     if (t > 0.0f) {
         Rectangle filled{ track.x, track.y, track.width * t, track.height };
         DrawRectangleRounded(filled, 1.0f, 6, theme::kGold);
+        DrawRectangleRounded({ filled.x, filled.y, filled.width, 1.5f }, 1.0f, 2,
+                             Color{ 255, 230, 180, 110 });
     }
     const float knobX = track.x + track.width * t;
-    DrawCircleV({ knobX, trackY + 2.0f }, hover || dragging ? 7.0f : 6.0f,
-                (hover || dragging) ? theme::kGoldLight : Color{ 240, 208, 160, 255 });
-    DrawCircleV({ knobX, trackY + 2.0f }, 2.4f, Color{ 23, 29, 39, 255 });
+    const float knobY = trackY + 2.0f;
+    if (hover || dragging) {
+        DrawCircleGradient({ knobX, knobY }, 15.0f,
+                           Color{ 215, 173, 104, 42 }, Color{ 215, 173, 104, 0 });
+    }
+    DrawCircleV({ knobX, knobY + 1.4f }, 6.2f, Color{ 0, 0, 0, 80 });
+    DrawCircleV({ knobX, knobY }, (hover || dragging) ? 6.6f : 6.0f,
+                (hover || dragging) ? theme::kGoldLight : Color{ 236, 202, 146, 255 });
+    DrawCircleV({ knobX, knobY }, 3.6f, Color{ 33, 39, 49, 255 });
+    DrawCircleV({ knobX - 1.2f, knobY - 1.4f }, 1.0f, Color{ 255, 255, 255, 110 });
     return changed;
 }
 
@@ -194,12 +248,16 @@ inline bool dropdown(UiContext& ui, int id, Rectangle r, const std::vector<std::
                      int& index, bool& open, int& openId) {
     bool changed = false;
     const bool hover = ui.hovered(r);
-    panel(r, hover ? Color{ 25, 37, 53, 255 } : Color{ 21, 31, 46, 255 }, theme::kLineSoft, 0.28f);
+    panel(r, hover ? Color{ 26, 38, 55, 255 } : Color{ 19, 29, 43, 255 },
+          (open && openId == id) ? theme::kGold
+                                 : (hover ? Color{ 88, 104, 128, 255 } : theme::kLineSoft), 0.28f);
+    bevel(r, 12, 20);
 
     const std::string label = (index >= 0 && index < static_cast<int>(items.size())) ? items[index] : "";
     if (ui.fonts) {
         ui.fonts->drawBody(label.c_str(), r.x + 10.0f, r.y + (r.height - 16.0f) * 0.5f + 1.0f, theme::kInk);
-        ui.fonts->drawSmall(open ? "▲" : "▼", r.x + r.width - 18.0f, r.y + (r.height - 13.0f) * 0.5f, theme::kMuted);
+        ui.fonts->drawSmall(open ? "▲" : "▼", r.x + r.width - 18.0f, r.y + (r.height - 13.0f) * 0.5f,
+                            open ? theme::kGold : theme::kMuted);
     }
 
     if (hover && ui.mousePressed && !ui.consumedClick) {
@@ -215,14 +273,18 @@ inline bool dropdown(UiContext& ui, int id, Rectangle r, const std::vector<std::
         if (list.y + list.height > ui.logicalHeight - 8.0f)
             list.y = r.y - listH - 4.0f;
 
-        DrawRectangleRounded(list, 0.08f, 6, Color{ 17, 26, 39, 252 });
-        DrawRectangleRoundedLinesEx(list, 0.08f, 6, 1.0f, theme::kLineSoft);
+        DrawRectangleRounded(list, 0.08f, 6, Color{ 15, 23, 35, 250 });
+        DrawRectangleRoundedLinesEx(list, 0.08f, 6, 1.0f, Color{ 62, 76, 96, 255 });
 
         for (std::size_t i = 0; i < items.size(); ++i) {
             const Rectangle row{ list.x + 4.0f, list.y + 4.0f + rowH * static_cast<float>(i),
                                  list.width - 8.0f, rowH };
             const bool rowHover = ui.hovered(row);
-            if (rowHover) DrawRectangleRounded(row, 0.2f, 4, Color{ 36, 50, 71, 255 });
+            if (rowHover) {
+                DrawRectangleRounded(row, 0.2f, 4, Color{ 213, 173, 106, 22 });
+                DrawRectangleRounded({ row.x, row.y + 4.0f, 2.5f, row.height - 8.0f }, 1.0f, 2,
+                                     Color{ 213, 173, 106, 190 });
+            }
             if (ui.fonts) {
                 const bool sel = (static_cast<int>(i) == index);
                 ui.fonts->drawSmall(items[i].c_str(), row.x + 8.0f, row.y + 7.0f,
@@ -249,14 +311,19 @@ inline bool dropdown(UiContext& ui, int id, Rectangle r, const std::vector<std::
 
 inline void drawDeferredDropdowns(UiContext& ui) {
     for (const auto& dd : ui.deferredDropdowns) {
-        DrawRectangleRounded(dd.list, 0.08f, 6, Color{ 17, 26, 39, 252 });
-        DrawRectangleRoundedLinesEx(dd.list, 0.08f, 6, 1.0f, theme::kLineSoft);
+        softShadow(dd.list, 0.08f, 4.0f, 64);
+        DrawRectangleRounded(dd.list, 0.08f, 6, Color{ 15, 23, 35, 250 });
+        DrawRectangleRoundedLinesEx(dd.list, 0.08f, 6, 1.0f, Color{ 62, 76, 96, 255 });
         constexpr float rowH = 26.0f;
         for (std::size_t i = 0; i < dd.items.size(); ++i) {
             const Rectangle row{ dd.list.x + 4.0f, dd.list.y + 4.0f + rowH * static_cast<float>(i),
                                  dd.list.width - 8.0f, rowH };
             const bool rowHover = ui.hovered(row);
-            if (rowHover) DrawRectangleRounded(row, 0.2f, 4, Color{ 36, 50, 71, 255 });
+            if (rowHover) {
+                DrawRectangleRounded(row, 0.2f, 4, Color{ 213, 173, 106, 22 });
+                DrawRectangleRounded({ row.x, row.y + 4.0f, 2.5f, row.height - 8.0f }, 1.0f, 2,
+                                     Color{ 213, 173, 106, 190 });
+            }
             if (ui.fonts) {
                 const bool sel = static_cast<int>(i) == dd.index;
                 ui.fonts->drawSmall(dd.items[i].c_str(), row.x + 8.0f, row.y + 7.0f,
@@ -280,12 +347,13 @@ inline void textCentered(UiContext& ui, const char* s, Rectangle r, Color c, boo
     else       ui.fonts->drawBody(s, r.x + (r.width - w) * 0.5f, r.y + (r.height - h) * 0.5f, c);
 }
 
-inline void progressBar(Rectangle r, float t, Color fill, Color back = Color{ 255, 255, 255, 18 }) {
+inline void progressBar(Rectangle r, float t, Color fill, Color back = Color{ 255, 255, 255, 14 }) {
     t = std::clamp(t, 0.0f, 1.0f);
     DrawRectangleRounded(r, 1.0f, 4, back);
     if (t > 0.0f) {
         Rectangle f{ r.x, r.y, r.width * t, r.height };
         DrawRectangleRounded(f, 1.0f, 4, fill);
+        DrawRectangleRounded({ f.x, f.y, f.width, 1.0f }, 1.0f, 2, Color{ 255, 255, 255, 50 });
     }
 }
 

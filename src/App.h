@@ -17,6 +17,9 @@
 #include "audio/Mixer.h"
 #include "audio/SampleBank.h"
 #include "core/Song.h"
+#include "core/VisualEvent.h"
+#include "fx/FxLayer.h"
+#include "fx/NoteParticles.h"
 #include "input/InputRouter.h"
 #include "input/KeyboardMap.h"
 #include "sequencer/Metronome.h"
@@ -39,6 +42,8 @@ public:
 
     /// 自动截图模式：渲染若干帧后存图并退出（用于无人值守地检视界面）。
     void setCaptureMode(int frames, std::string path, bool autoPlaySong);
+    /// 特效演示模式：固定种子与 dt，脚本注入音符，定时输出 5 张截图后退出。
+    void setFxDemoMode(std::string dir);
     void setWindowSize(int width, int height) noexcept;
 
     // ---- InputSink ----
@@ -54,6 +59,9 @@ private:
 
     // ---------------- 界面 ----------------
     void handleInput(float dt);
+    void updateFx(float dt);   // 排空视觉事件队列并推进音符粒子
+    void runFxDemoScript(int frame);   // --fx-demo：按 demo 时钟注入脚本事件
+    void drawFxStage();        // 舞台带背景（控制台面板的一部分，画在琴键之前）
     void draw(float dt);
     void drawTopbar();
     void drawHero();
@@ -84,6 +92,9 @@ private:
     void saveFavorites();
     void loadLanguage();
     void saveLanguage() const;
+    void loadFxSettings();      // fx.txt 不存在或坏值时回落默认（Standard / 关）
+    void saveFxSettings() const;
+    void applyFxSettings();     // 档位/减少动态效果改动即生效并落盘
     bool isFavorite(int index) const;
     void toggleFavorite(int index);
 
@@ -96,6 +107,9 @@ private:
     Mixer        mixer_;
     AudioDevice  device_;
     SampleBank   samples_;
+    VisualEventQueue fxQueue_;       // 音频线程 → UI 线程的音符视觉事件
+    fx::NoteFx       noteFx_;        // 「按键飘出音符」粒子逻辑
+    fx::FxLayer      fxLayer_;       // 音符图集与渲染层
     KeyboardMap  keyboardMap_;
     InputRouter  input_;
     PianoView    pianoView_;
@@ -171,6 +185,29 @@ private:
     int         autoExitFrames_ = 0;
     std::string screenshotPath_;
     bool        captureAutoPlay_ = false;
+
+    // --fx-demo 演示模式
+    bool        fxDemo_ = false;
+    std::string fxDemoDir_;
+    int         fxDemoCursor_ = 0;    // 脚本推进游标
+    bool        fxDemoDirReady_ = false;
+
+    // 特效图集重烘焙防抖 / 视图变化检测
+    float fxAtlasScale_ = 0.0f;
+    float fxAtlasTimer_ = 0.0f;
+    float prevViewScale_ = 0.0f;
+    int   prevScreenW_ = 0;
+    int   prevScreenH_ = 0;
+
+    // 特效设置（持久化到 fx.txt）
+    int  fxLevel_ = 2;                 // 0=关 1=少 2=标准 3=多
+    bool fxReducedMotion_ = false;
+
+    // 自适应降级：只统计特效 update + 绘制提交，当次会话不回升
+    double fxFrameCostMs_ = 0.0;
+    int    fxOverBudgetFrames_ = 0;
+    int    fxIgnoreFrames_ = 0;
+    bool   fxDegraded_ = false;
     int         windowWidth_ = 1520;
     int         windowHeight_ = 1000;
     float       dpiScale_ = 1.0f;

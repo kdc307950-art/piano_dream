@@ -46,6 +46,10 @@ public:
     /// 某个音高在内容坐标系里的左边界 X。
     float xOfNote(int midi) const;
 
+    /// 键顶中心（内容/逻辑坐标系，含滚动换算）：x=键中心（白键 x+keyW/2，黑键 x+blackW/2），
+    /// y=键顶（layout_.keys.y）。返回键是否在可视视口内（供特效层跳过屏外粒子）。
+    bool keyTopCenter(int midi, float& x, float& y) const;
+
     void draw(const Mixer& mixer, const InputRouter& input, const FontBook& fonts) const;
 
 private:

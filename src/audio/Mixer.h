@@ -20,6 +20,7 @@
 #include "audio/Voice.h"
 #include "audio/Wavetable.h"
 #include "core/Event.h"
+#include "core/VisualEvent.h"
 
 namespace piano {
 
@@ -77,6 +78,10 @@ public:
 
     void setSampleBank(const SampleBank* bank) noexcept { bank_ = bank; }
     const SampleBank* sampleBank() const noexcept { return bank_; }
+
+    /// 视觉事件出口（音频线程 → UI 线程）。启动前设置、停止后清除，运行中不更改；
+    /// 线程启动/退出本身构成 happens-before，普通指针即可，TSan 干净。
+    void setVisualEventQueue(VisualEventQueue* q) noexcept { visualQueue_ = q; }
 
     // ---------------- 状态查询（UI 线程） ----------------
 
@@ -169,6 +174,8 @@ private:
 
     std::atomic<float> masterVol_{0.75f};
     std::atomic<EngineMode> engineMode_{EngineMode::Auto};
+
+    VisualEventQueue* visualQueue_ = nullptr;   // 见 setVisualEventQueue
 };
 
 } // namespace piano

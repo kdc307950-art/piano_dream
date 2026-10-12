@@ -155,6 +155,7 @@ CMake 版同样产出 `piano.exe`（GUI）与 `piano-cli.exe`（控制台），
 | `'xxx' 不是内部或外部命令` （来自 .cmd 文件） | 批处理文件里混了非 ASCII 字符且编码与控制台代码页不符。本工程的 `build.cmd` 已是纯 ASCII |
 | `找不到路径“C:\Users\xxx\piano”` | 工程在 `Desktop\游戏开发\钢琴模拟器\piano`，先 `cd` 进去 |
 | 链接报 `cannot find crt2.o` / `-lmingw32` | 工具链路径含中文。把它复制到 `C:\w64devkit`（见上文「编译器」） |
+| ninja 报 `FindFirstFileExA(...): The filename, directory name, or volume label syntax is incorrect` | 工程路径含中文：CMake 以 UTF-8 写构建文件，而 Ninja / MinGW 按系统 ANSI 代码页解析路径。`build.ps1` / `build.sh` 已自动用 `subst` 映射一个纯 ASCII 盘符兜底，正常重跑脚本即可 |
 | 界面中文显示成 `?` | 系统缺中文字体。启动日志会打印实际用了哪个字体、缺哪些码点 |
 | 控制台中文显示成 `閿欒鐞?` 这类乱码 | 控制台按 GBK 解码了 UTF-8 字节。程序已自动把控制台代码页切到 UTF-8（退出时恢复）；用 `.\build.cmd -SelfTest` 跑时脚本还会显式按 UTF-8 解码子进程输出，与你的控制台设置无关 |
 

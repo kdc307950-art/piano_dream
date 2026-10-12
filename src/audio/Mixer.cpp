@@ -198,6 +198,17 @@ Voice* Mixer::noteOn(int midi, float velocity, Source source) {
 
     Voice* v = startVoice(midi, velocity, source);
     visual_[static_cast<std::size_t>(midi)].fetch_add(1, std::memory_order_relaxed);
+
+    // 纯视觉副作用：声部真正启动后才通知 UI 飘音符；节拍器不飘。
+    // 队列满时直接丢弃，不统计不重试，绝不影响发声。
+    if (v && visualQueue_ && source != Source::Metronome) {
+        VisualEvent ev;
+        ev.audioFrame = frameCounter_.load(std::memory_order_relaxed);
+        ev.velocity   = velocity;
+        ev.midi       = static_cast<std::uint8_t>(midi);
+        ev.source     = source;
+        visualQueue_->push(ev);
+    }
     return v;
 }
 
