@@ -132,8 +132,12 @@ endif()
 
 # 输出到工程根目录：用户一眼能看到，双击时工作目录就是工程根，
 # assets/samples、exports/ 都能自然找到。
-set_target_properties(piano piano-cli PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+# 例外：TSan 构建产物留在构建目录（build-tsan/），避免覆盖仓库根的成品
+# 二进制 —— CI 的截图矩阵在 TSan 步骤之后还要跑 ./piano。
+if(NOT PIANO_TSAN)
+    set_target_properties(piano piano-cli PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+endif()
 
 enable_testing()
 add_test(NAME piano_selftest COMMAND piano-cli --selftest)
