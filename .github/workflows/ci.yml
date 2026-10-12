@@ -52,7 +52,8 @@ jobs:
         run: cmake --build build-tsan --parallel
       - name: ThreadSanitizer selftest
         if: matrix.os == 'ubuntu-22.04'
-        run: ./build-tsan/piano-cli --selftest
+        # 产物固定在仓库根（CMakeLists RUNTIME_OUTPUT_DIRECTORY），TSan 构建会覆盖 ./piano-cli
+        run: ./piano-cli --selftest
       - name: Screenshot matrix
         if: matrix.os == 'ubuntu-22.04'
         run: xvfb-run -a python3 tools/capture_matrix.py --exe ./piano --out artifacts/screenshots

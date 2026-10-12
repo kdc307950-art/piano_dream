@@ -33,7 +33,10 @@ inline std::filesystem::path userDataDirectory() {
         const fs::path modern = fs::path(home) / "Library" / "Application Support" / "GrandStudioPiano";
         std::error_code ec;
         if (fs::exists(legacy, ec) && !fs::exists(modern, ec)) {
-            // 一次性迁移：复制而非移动，失败则继续用旧位置
+            // 一次性迁移：复制而非移动，失败则继续用旧位置。
+            // fs::copy 不会创建 modern 的父目录，必须先建（否则首次运行必失败）。
+            fs::create_directories(modern.parent_path(), ec);
+            ec.clear();
             fs::copy(legacy, modern, fs::copy_options::recursive, ec);
             if (ec) return legacy;
         }
