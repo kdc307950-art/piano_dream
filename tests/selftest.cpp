@@ -19,9 +19,7 @@
 #include <thread>
 #include <vector>
 
-#ifdef _WIN32
-#include <stdlib.h>   // _putenv_s
-#endif
+#include <stdlib.h>   // setenv / _putenv_s / _wputenv_s
 
 #include "audio/Mixer.h"
 #include "core/Note.h"
@@ -728,12 +726,20 @@ void testNoteFx() {
         const int na = run(123u, a);
         const int nb = run(123u, b);
         const int nc = run(456u, c);
-        check(na == nb && na > 0 &&
-              std::memcmp(a, b, sizeof(fx::RenderItem) * static_cast<std::size_t>(na)) == 0,
-              "同种子同 dt 序列：collect 逐位一致");
-        check(nc != na ||
-              std::memcmp(a, c, sizeof(fx::RenderItem) * static_cast<std::size_t>(na)) != 0,
-              "换种子后至少一个字段不同");
+        // 逐字段 == 比较，不用 memcmp：RenderItem 第 3 字节是 padding，
+        // collect 的成员逐一拷贝不写它，栈上数组的 padding 是不确定的（ARM64 上尤其如此）。
+        // 解析式设计在同平台必须逐位一致，字段比较不许放松成 epsilon。
+        auto fieldEq = [](const fx::RenderItem& x, const fx::RenderItem& y) {
+            return x.midi == y.midi && x.shape == y.shape && x.source == y.source &&
+                   x.offsetX == y.offsetX && x.offsetY == y.offsetY && x.scale == y.scale &&
+                   x.alpha == y.alpha && x.rotation == y.rotation;
+        };
+        bool sameBits = na == nb && na > 0;
+        for (int i = 0; i < na && sameBits; ++i) sameBits = fieldEq(a[i], b[i]);
+        check(sameBits, "同种子同 dt 序列：collect 逐位一致");
+        bool differs = nc != na;
+        for (int i = 0; i < na && i < nc && !differs; ++i) differs = !fieldEq(a[i], c[i]);
+        check(differs, "换种子后至少一个字段不同");
     }
 
     // e. 映射单调性（含端点 21 / 108）
@@ -1348,41 +1354,78 @@ void testSongLibrary() {
     {
         check(userDataPath("x") == userDataDirectory() / "x", "l: userDataPath 拼接正确");
 
-        const fs::path fakeAppData = base / "appdata";
-        const fs::path fakeCwd = base / "cwd";
-        fs::create_directories(fakeAppData, ec);
-        fs::create_directories(fakeCwd, ec);
-        writeTextTo(fakeCwd / "favorites.txt", "song-1\n");
-
-        // 备份并替换环境变量（仅本进程；Windows 下 userDataDirectory 读 APPDATA）。
-        // 路径含中文，必须走宽字符 _wputenv_s —— 窄版 _putenv_s 会把路径按 ANSI 编码出岔。
-        const fs::path oldCwd = fs::current_path(ec);
+        // 备份并替换环境变量（仅本进程）。Windows 下 userDataDirectory 读 APPDATA，
+        // POSIX 读 HOME；路径含中文，Windows 必须走宽字符 _wputenv_s。
+        // 两个子场景各自独立目录，互不依赖执行顺序，也不会碰到 runner 的真实 HOME。
     #ifdef _WIN32
         const wchar_t* oldAppData = _wgetenv(L"APPDATA");
-        const std::wstring oldAppDataW = oldAppData ? oldAppData : L"";
-        _wputenv_s(L"APPDATA", fakeAppData.wstring().c_str());
+        const std::wstring oldEnvW = oldAppData ? oldAppData : L"";
+        auto setEnv = [](const fs::path& p) { _wputenv_s(L"APPDATA", p.wstring().c_str()); };
+        auto restoreEnv = [&]() { _wputenv_s(L"APPDATA", oldEnvW.c_str()); };
     #else
         const char* oldHome = std::getenv("HOME");
-        const std::string oldHomeS = oldHome ? oldHome : "";
-        setenv("HOME", fakeAppData.string().c_str(), 1);
+        const std::string oldEnv = oldHome ? oldHome : "";
+        auto setEnv = [](const fs::path& p) { setenv("HOME", p.string().c_str(), 1); };
+        auto restoreEnv = [&]() { setenv("HOME", oldEnv.c_str(), 1); };
     #endif
-        fs::current_path(fakeCwd, ec);
-        migrateLegacyUserData();
-        check(readTextFile(fakeAppData / "GrandStudioPiano" / "favorites.txt") == "song-1\n",
-              "l: cwd 旧配置复制到用户数据目录");
-        // 目标已存在时不覆盖
-        writeTextTo(fakeCwd / "favorites.txt", "song-2\n");
-        migrateLegacyUserData();
-        check(readTextFile(fakeAppData / "GrandStudioPiano" / "favorites.txt") == "song-1\n",
-              "l: 目标已存在则不覆盖（复制而非移动）");
-        check(fs::exists(fakeCwd / "favorites.txt", ec), "l: 旧文件保留不删除");
+        const fs::path oldCwd = fs::current_path(ec);
+
+        // l1：cwd 有 favorites.txt 而用户数据目录没有 → 复制。
+        //     macOS 下这里真实走 ~/Library/Application Support 分支（临时 HOME 隔离）。
+        {
+            const fs::path fakeHome = base / "l1" / "home";
+            const fs::path fakeCwd  = base / "l1" / "cwd";
+            fs::create_directories(fakeHome, ec);
+            fs::create_directories(fakeCwd, ec);
+            writeTextTo(fakeCwd / "favorites.txt", "song-1\n");
+            setEnv(fakeHome);
+            fs::current_path(fakeCwd, ec);
+            migrateLegacyUserData();
+            const fs::path target = userDataPath("favorites.txt");
+            check(readTextFile(target) == "song-1\n", "l: cwd 旧配置复制到用户数据目录");
+            // 确认迁移目标位于临时 HOME 之下（隔离生效；各平台布局不同，
+            // 不断言具体子路径 —— Windows=%APPDATA%/…，macOS=Library/Application Support/…，
+            // Linux=.local/share/…）
+            const fs::path tn = target.lexically_normal();
+            const fs::path hn = fakeHome.lexically_normal();
+            check(std::equal(hn.begin(), hn.end(), tn.begin()), "l: 迁移目标位于临时 HOME 下");
+            check(fs::exists(fakeCwd / "favorites.txt", ec), "l: 旧文件保留不删除");
+        }
+
+        // l2：目标已存在 → 不覆盖（独立目录，与 l1 无关）
+        {
+            const fs::path fakeHome = base / "l2" / "home";
+            const fs::path fakeCwd  = base / "l2" / "cwd";
+            fs::create_directories(fakeCwd, ec);
+            writeTextTo(fakeCwd / "favorites.txt", "song-2\n");
+            setEnv(fakeHome);
+            const fs::path target = userDataPath("favorites.txt");
+            fs::create_directories(target.parent_path(), ec);
+            writeTextTo(target, "existing\n");
+            fs::current_path(fakeCwd, ec);
+            migrateLegacyUserData();
+            check(readTextFile(target) == "existing\n", "l: 目标已存在则不覆盖（复制而非移动）");
+        }
+
+    #ifdef __APPLE__
+        // l3：macOS 旧位置 ~/.local/share 存在且新位置不存在 → 一次性复制迁移
+        {
+            const fs::path fakeHome = base / "l3" / "home";
+            const fs::path legacyDir = fakeHome / ".local" / "share" / "GrandStudioPiano";
+            fs::create_directories(legacyDir, ec);
+            writeTextTo(legacyDir / "favorites.txt", "legacy\n");
+            setEnv(fakeHome);
+            const fs::path dir = userDataDirectory();
+            check(dir == fakeHome / "Library" / "Application Support" / "GrandStudioPiano",
+                  "l: macOS 迁移后使用新位置");
+            check(readTextFile(dir / "favorites.txt") == "legacy\n",
+                  "l: macOS legacy 内容被复制迁移");
+            check(fs::exists(legacyDir / "favorites.txt", ec), "l: macOS legacy 旧文件保留不删除");
+        }
+    #endif
+
         fs::current_path(oldCwd, ec);
-    #ifdef _WIN32
-        _wputenv_s(L"APPDATA", oldAppDataW.c_str());
-    #else
-        setenv("HOME", oldHomeS.c_str(), 1);
-    #endif
-        // macOS 分支（~/Library/Application Support + legacy 一次性迁移）：仅代码走查，本机不覆盖
+        restoreEnv();
     }
 
     // ---- m. 收藏裁决：favorites.txt ∪ 索引 favorite=1，合并后写回两处 ----
