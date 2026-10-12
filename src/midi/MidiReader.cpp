@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstring>
 #include <fstream>
+#include <numeric>
 #include <vector>
 
 #include "core/Note.h"
@@ -105,6 +106,7 @@ MidiParseResult parseMidi(const std::uint8_t* data, std::size_t size) {
     std::vector<NoteEvent> events;
     std::vector<std::size_t> trackEventCounts(ntrks, 0);
     std::vector<std::uint16_t> eventTracks;
+    std::vector<MidiParseResult::TrackStat> trackStats(ntrks);
 
     for (std::uint16_t t = 0; t < ntrks; ++t) {
         if (pos + 8 > size) break;
@@ -199,6 +201,13 @@ MidiParseResult parseMidi(const std::uint8_t* data, std::size_t size) {
                                            : (chan == 0 ? kTrackMelody : kTrackAccomp);
                     pending[note].push_back(ev);
                     if (t < trackEventCounts.size()) ++trackEventCounts[t];
+                    if (t < trackStats.size()) {
+                        auto& st = trackStats[t];
+                        ++st.noteCount;
+                        st.lowest  = st.lowest < 0 ? note : std::min(st.lowest, static_cast<int>(note));
+                        st.highest = std::max(st.highest, static_cast<int>(note));
+                        st.channelMask |= (1u << chan);
+                    }
                 } else {
                     // velocity == 0 的 NoteOn 同样视为 NoteOff
                     auto& q = pending[note];
@@ -257,8 +266,33 @@ MidiParseResult parseMidi(const std::uint8_t* data, std::size_t size) {
     out.song.difficulty = 2;
     out.song.userImport = true;
     out.song.events     = std::move(events);
-    out.song.sortEvents();
 
+    // 与 Song::sortEvents 相同的稳定排序，但通过索引排列同步重排 eventTracks，
+    // 保持「事件 ↔ 原始轨道」一一对应（供曲库事后重选旋律轨）
+    {
+        std::vector<std::size_t> perm(out.song.events.size());
+        std::iota(perm.begin(), perm.end(), std::size_t{0});
+        std::stable_sort(perm.begin(), perm.end(),
+                         [&](std::size_t a, std::size_t b) {
+                             const NoteEvent& ea = out.song.events[a];
+                             const NoteEvent& eb = out.song.events[b];
+                             if (ea.tick != eb.tick) return ea.tick < eb.tick;
+                             if (ea.track != eb.track) return ea.track < eb.track;
+                             return ea.note < eb.note;
+                         });
+        std::vector<NoteEvent> sortedEvents;
+        std::vector<std::uint16_t> sortedTracks;
+        sortedEvents.reserve(perm.size());
+        sortedTracks.reserve(perm.size());
+        for (std::size_t idx : perm) {
+            sortedEvents.push_back(out.song.events[idx]);
+            sortedTracks.push_back(eventTracks[idx]);
+        }
+        out.song.events = std::move(sortedEvents);
+        out.eventTracks = std::move(sortedTracks);
+    }
+
+    out.trackStats   = std::move(trackStats);
     out.tempoChanges = tempoChanges;
     out.skippedEvents = skipped;
     out.ok = true;
@@ -269,12 +303,19 @@ MidiParseResult loadMidiFile(const std::string& path) {
     std::ifstream in(path, std::ios::binary);
     if (!in) {
         MidiParseResult r;
-        r.error = "无法打开文件：" + path;
+        r.error = std::string(ui::t(ui::kMidiOpenFail)) + "：" + path;
         return r;
     }
     std::vector<std::uint8_t> buf((std::istreambuf_iterator<char>(in)),
                                    std::istreambuf_iterator<char>());
     return parseMidi(buf.data(), buf.size());
+}
+
+void reassignMelodyTrack(MidiParseResult& result, std::size_t trackIdx) {
+    const std::size_t n = std::min(result.song.events.size(), result.eventTracks.size());
+    for (std::size_t i = 0; i < n; ++i)
+        result.song.events[i].track =
+            result.eventTracks[i] == trackIdx ? kTrackMelody : kTrackAccomp;
 }
 
 } // namespace piano

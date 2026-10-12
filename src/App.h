@@ -22,6 +22,7 @@
 #include "fx/NoteParticles.h"
 #include "input/InputRouter.h"
 #include "input/KeyboardMap.h"
+#include "library/SongLibrary.h"
 #include "sequencer/Metronome.h"
 #include "sequencer/Player.h"
 #include "sequencer/PracticeJudge.h"
@@ -85,6 +86,9 @@ private:
     void importMidiFile(const std::string& path);
     void refreshSongList();
     void selectSong(int index);
+    /// 惰性加载：用户曲库条目首次被选中/播放时才解析 .mid 文件并填充 events。
+    /// 返回 false 表示加载失败（调用方应中止后续动作）。
+    bool ensureSongLoaded(int index);
     void startSongPlayback();
     void stopSongPlayback();
     void applyPracticeMode();
@@ -125,6 +129,7 @@ private:
     std::vector<Song> songs_;
     std::vector<int>  songView_;      // 过滤后的索引
     std::vector<std::string> favorites_;
+    SongLibrary library_;             // 用户曲库（索引 + 去重 + 惰性解析）
 
     // 界面状态
     int   songIndex_ = 0;
@@ -214,6 +219,7 @@ private:
     float       fontScale_ = 1.0f;
     float       fontScaleTimer_ = 0.0f;
     std::vector<std::string> fontSamples_;
+    float       fontRebakeTimer_ = -1.0f;   // ≥0 时表示导入新标题后待重烘焙字体图集（防抖）
     float       viewScale_ = 1.0f;
     Vector2     viewOffset_{};
 };

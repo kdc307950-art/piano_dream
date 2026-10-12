@@ -81,7 +81,11 @@ inline const char* t(const char* chinese) {
         {"没有匹配的曲目", "No matching songs"}, {"导入的 MIDI", "Imported MIDI"},
         {"我的录制", "My recording"}, {"本机录制", "Local recording"},
         {"音符特效", "Notes FX"}, {"关", "Off"}, {"少", "Low"},
-        {"标准", "Standard"}, {"多", "High"}, {"减少动态效果", "Reduced motion"}
+        {"标准", "Standard"}, {"多", "High"}, {"减少动态效果", "Reduced motion"},
+        {"已在曲库中", "Already in library"}, {"文件超过 1MB 上限", "File exceeds the 1MB limit"},
+        {"曲库已满（500 首）", "Library is full (500 songs)"},
+        {"音符数超过上限", "Note count exceeds the limit"},
+        {"曲库总容量已满", "Library storage is full"}, {"曲库写入失败", "Failed to write library"}
     };
     const auto it = en.find(chinese);
     return it == en.end() ? chinese : it->second;
@@ -226,6 +230,14 @@ inline constexpr const char* kToastDragHint     = "把 .mid 文件拖进窗口�
 inline constexpr const char* kSampleNone        = "未找到采样，使用合成音色";
 inline constexpr const char* kSynthBadge        = "● 离线合成音色";
 
+// ---- 用户曲库 ----
+inline constexpr const char* kLibDuplicate    = "已在曲库中";
+inline constexpr const char* kLibTooLarge     = "文件超过 1MB 上限";
+inline constexpr const char* kLibTooMany      = "曲库已满（500 首）";
+inline constexpr const char* kLibTooManyNotes = "音符数超过上限";
+inline constexpr const char* kLibFull         = "曲库总容量已满";
+inline constexpr const char* kLibIoError      = "曲库写入失败";
+
 inline const std::vector<std::string>& allStrings() {
     static const std::vector<std::string> v = {
         kWindowTitle, kBrandTitle, kBrandSub,
@@ -254,6 +266,7 @@ inline const std::vector<std::string>& allStrings() {
         kToastExported, kToastExportFail, kToastImportOk, kToastImportFail,
         kToastFavAdded, kToastFavRemoved, kToastNoSong, kToastDragHint,
         kSampleNone, kSynthBadge,
+        kLibDuplicate, kLibTooLarge, kLibTooMany, kLibTooManyNotes, kLibFull, kLibIoError,
         // 采样徽标里的数字与单位
         "组真实采样", "个采样锚点", "音源",
         // 音符名、难度、以及曲目标题等运行时拼接用到的字符

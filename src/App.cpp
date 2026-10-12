@@ -16,13 +16,12 @@ constexpr unsigned long kMaxWindowsPath = 32768;
 extern "C" __declspec(dllimport) unsigned long __stdcall GetModuleFileNameW(
     void*, wchar_t*, unsigned long);
 extern "C" __declspec(dllimport) int __stdcall SetCurrentDirectoryW(const wchar_t*);
-extern "C" __declspec(dllimport) unsigned long __stdcall GetEnvironmentVariableW(
-    const wchar_t*, wchar_t*, unsigned long);
 #else
 #include <unistd.h>
 #endif
 
 #include "core/Note.h"
+#include "core/UserData.h"
 #include "fx/FxSettings.h"
 #include "midi/MidiReader.h"
 #include "midi/MidiWriter.h"
@@ -66,24 +65,6 @@ void anchorWorkingDirectoryToExecutable() {
 #endif
 }
 
-std::filesystem::path userDataDirectory() {
-#ifdef _WIN32
-    wchar_t appData[32768]{};
-    const unsigned long n = GetEnvironmentVariableW(L"APPDATA", appData, 32768);
-    if (n > 0 && n < 32768)
-        return std::filesystem::path(std::wstring(appData, n)) / L"GrandStudioPiano";
-#else
-    if (const char* home = std::getenv("HOME"))
-        return std::filesystem::path(home) / ".local" / "share" / "GrandStudioPiano";
-#endif
-    return std::filesystem::path("user-data");
-}
-
-/// 用户数据目录下的某个文件（fx.txt / favorites.txt / language.txt 统一走这里）。
-std::filesystem::path userDataPath(const char* filename) {
-    return userDataDirectory() / filename;
-}
-
 } // namespace
 
 // ===========================================================================
@@ -92,6 +73,7 @@ std::filesystem::path userDataPath(const char* filename) {
 
 bool App::init(std::string* log) {
     anchorWorkingDirectoryToExecutable();
+    migrateLegacyUserData();   // 旧版本把配置写在 cwd：存在则复制到用户数据目录
     SetTraceLogLevel(LOG_WARNING);
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT | FLAG_VSYNC_HINT);
 #ifdef __APPLE__
@@ -133,7 +115,23 @@ bool App::init(std::string* log) {
 
     // ---- 曲目先建好，曲名也要进入字形图集 ----
     songs_ = builtinSongs();
+
+    // ---- 用户曲库：只加载索引，曲目以占位条目（events 为空）追加在内置曲目之后，
+    //      首次选中/播放时再由 ensureSongLoaded 惰性解析 ----
+    library_.load(userDataPath("library"));
+    for (const auto& e : library_.entries()) {
+        Song s;
+        s.id         = e.id;
+        s.title      = e.title;
+        s.composer   = "用户文件";
+        s.bpm        = e.bpm;
+        s.difficulty = 2;
+        s.userImport = true;
+        songs_.push_back(std::move(s));
+    }
+
     std::vector<std::string> fontSamples = ui::allStrings();
+    fontSamples.push_back(library_.collectTitleChars());
     for (const auto& s : songs_) {
         fontSamples.push_back(s.title);
         fontSamples.push_back(s.composer);
@@ -215,6 +213,20 @@ bool App::init(std::string* log) {
     scope_.assign(kScopePoints, 0.0f);
 
     loadFavorites();
+    // 收藏裁决（A1.5）：favorites.txt ∪ 曲库索引 favorite=1 取并集（并集不丢收藏；
+    // 取消收藏的正常路径会同时写两处，所以合并不会复活已取消的收藏）。
+    // 不一致立即写回两处，使重启后一致。
+    {
+        const std::vector<std::string> merged = mergeFavoriteIds(library_.entries(), favorites_);
+        for (const auto& id : merged) {
+            const SongLibrary::Entry* e = library_.find(id);
+            if (e && !e->favorite) library_.setFavorite(id, true);   // 文件有、索引没有的回写索引
+        }
+        if (merged != favorites_) {   // 索引有、文件没有的由并集结果覆盖 favorites.txt
+            favorites_ = merged;
+            saveFavorites();
+        }
+    }
     refreshSongList();
     if (!songs_.empty()) selectSong(0);
 
@@ -565,6 +577,14 @@ void App::draw(float dt) {
             fontScaleTimer_ = 0.0f;
         }
     } else fontScaleTimer_ = 0.0f;
+    // 导入的新曲目标题可能带来图集外字符：同一防抖节奏重烘焙字体
+    if (fontRebakeTimer_ >= 0.0f) {
+        fontRebakeTimer_ += dt;
+        if (fontRebakeTimer_ >= 0.15f) {
+            fonts_.load(fontSamples_, fontScale_);
+            fontRebakeTimer_ = -1.0f;
+        }
+    }
     // 音符图集的重烘焙与字体同一防抖策略：变化 > 0.01 且稳定 0.15s
     if (std::fabs(rasterScale - fxAtlasScale_) > 0.01f) {
         fxAtlasTimer_ += dt;
@@ -1356,24 +1376,65 @@ void App::exportSongMidi() {
 }
 
 void App::importMidiFile(const std::string& path) {
-    const MidiParseResult r = loadMidiFile(path);
-    if (!r.ok) {
-        toast(std::string(ui::t(ui::kToastImportFail)) + "：" + r.error);
-        setStatus(std::string(ui::t(ui::kToastImportFail)) + "：" + r.error, true);
+    const SongLibrary::AddResult r = library_.add(std::filesystem::path(path), std::nullopt);
+    using Code = SongLibrary::AddResult::Code;
+
+    if (r.code == Code::Ok) {
+        const SongLibrary::Entry* e = library_.find(r.id);
+        Song s;
+        s.id         = r.id;
+        s.title      = e ? e->title : std::string(ui::t(ui::kImportedMidi));
+        s.composer   = "用户文件";
+        s.bpm        = e ? e->bpm : kDefaultBpm;
+        s.difficulty = 2;
+        s.userImport = true;
+        // 新标题可能含有图集外的字符：并入样本，防抖重烘焙（不打断导入流程）
+        if (!fonts_.canRender(s.title)) {
+            fontSamples_.push_back(s.title);
+            fontRebakeTimer_ = 0.0f;
+        }
+        songs_.push_back(std::move(s));
+        refreshSongList();
+        // 选中刚导入的曲目
+        for (std::size_t i = 0; i < songView_.size(); ++i) {
+            if (songView_[i] == static_cast<int>(songs_.size()) - 1) { selectSong(songView_[i]); break; }
+        }
+        toast(std::string(ui::t(ui::kToastImportOk)) + " · " + std::to_string(r.noteCount) + " 个音符");
+        setStatus(ui::t(ui::kToastImportOk));
         return;
     }
-    Song s = r.song;
-    s.id = "import-" + std::to_string(songs_.size());
-    if (!fonts_.canRender(s.title)) s.title = ui::t(ui::kImportedMidi);
 
-    songs_.push_back(std::move(s));
-    refreshSongList();
-    // 选中刚导入的曲目
-    for (std::size_t i = 0; i < songView_.size(); ++i) {
-        if (songView_[i] == static_cast<int>(songs_.size()) - 1) { selectSong(songView_[i]); break; }
+    if (r.code == Code::Duplicate) {
+        toast(ui::t(ui::kLibDuplicate));
+        // 清掉过滤条件，定位并选中已有条目
+        showFavoritesOnly_ = false;
+        searchText_.clear();
+        refreshSongList();
+        for (std::size_t i = 0; i < songs_.size(); ++i) {
+            if (songs_[i].id != r.id) continue;
+            for (int v : songView_) {
+                if (v == static_cast<int>(i)) { selectSong(v); break; }
+            }
+            break;
+        }
+        return;
     }
-    toast(std::string(ui::t(ui::kToastImportOk)) + " · " + std::to_string(r.song.events.size()) + " 个音符");
-    setStatus(ui::t(ui::kToastImportOk));
+
+    std::string text;
+    switch (r.code) {
+    case Code::TooLarge:     text = ui::t(ui::kLibTooLarge); break;
+    case Code::TooManySongs: text = ui::t(ui::kLibTooMany); break;
+    case Code::TooManyNotes: text = ui::t(ui::kLibTooManyNotes); break;
+    case Code::LibraryFull:  text = ui::t(ui::kLibFull); break;
+    case Code::IoError:
+    case Code::ReadOnly:     text = ui::t(ui::kLibIoError); break;
+    default:
+        text = std::string(ui::t(ui::kToastImportFail)) +
+               (r.message.empty() ? "" : "：" + r.message);
+        break;
+    }
+    toast(text);
+    setStatus(text, true);
 }
 
 void App::refreshSongList() {
@@ -1393,6 +1454,7 @@ void App::refreshSongList() {
 void App::selectSong(int index) {
     if (index < 0 || index >= static_cast<int>(songs_.size())) return;
     if (songPlaying_) stopSongPlayback();
+    if (!ensureSongLoaded(index)) return;
     songIndex_ = index;
     player_.setSong(songs_[static_cast<std::size_t>(index)], sampleRate_);
     player_.setSpeed(speed_);
@@ -1402,8 +1464,28 @@ void App::selectSong(int index) {
     setStatus(ui::t(ui::kSongIdle));
 }
 
+bool App::ensureSongLoaded(int index) {
+    if (index < 0 || index >= static_cast<int>(songs_.size())) return false;
+    Song& s = songs_[static_cast<std::size_t>(index)];
+    if (!s.userImport || !s.events.empty()) return true;
+    if (s.id.rfind("u-", 0) != 0) return true;   // 非曲库条目（无对应 .mid 文件）
+    Song loaded = library_.loadSong(s.id);
+    if (loaded.events.empty()) {
+        const std::string text = std::string(ui::t(ui::kToastImportFail)) + "：" + s.title;
+        toast(text);
+        setStatus(text, true);
+        return false;
+    }
+    // 索引里的标题/id 为准（解析结果里的标题来自 MIDI 元事件，可能缺失）
+    loaded.id    = s.id;
+    loaded.title = s.title;
+    s = std::move(loaded);
+    return true;
+}
+
 void App::startSongPlayback() {
     if (songs_.empty()) { toast(ui::t(ui::kToastNoSong)); return; }
+    if (!ensureSongLoaded(songIndex_)) return;
     if (recording_) stopRecording();
     if (playingRecording_) stopPlayback();
 
@@ -1459,6 +1541,10 @@ void App::toggleFavorite(int index) {
         toast(ui::t(ui::kToastFavRemoved));
     }
     saveFavorites();
+    if (id.rfind("u-", 0) == 0) {
+        const bool nowFav = std::find(favorites_.begin(), favorites_.end(), id) != favorites_.end();
+        library_.setFavorite(id, nowFav);
+    }
     refreshSongList();
 }
 
