@@ -1,8 +1,14 @@
 # 构建产物
 build/
+build-*/
 *.o
 *.exe
 *.dll
+*.log
+gate.png
+
+# 本地缓存的 raylib 源码；CMake 缺失时会自动 FetchContent 下载
+third_party/raylib-src/
 
 # 运行时生成
 exports/
