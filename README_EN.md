@@ -36,6 +36,8 @@ The library contains five built-in songs: Canon, Für Elise, Moonlight Sonata, C
 
 The desktop workspace follows the supplied design reference: a deep navy and champagne-gold studio shell, a song library, night-stage hero, four independent control cards, and circular transport controls. The header exposes the honest MIDI connection state and a settings panel for sustain, note effects, and reduced motion. Score practice, piano roll, and practice statistics all read from the same song event list and playback clock.
 
+The transport play button pauses and resumes from the current song position; the idle waveform and level meter stay quiet when no audio is active.
+
 ## Audio and samples
 
 The default package includes 66 FLAC anchors from [FreePats Upright Piano KW](https://github.com/freepats/upright-piano-KW). The source describes recordings of a Kawai upright piano and publishes them under CC0 1.0. The files are mapped by note name, and `vL` / `vH` layers are selected from the actual playing velocity. Missing anchors or unavailable audio backends fall back to the built-in synthesizer.

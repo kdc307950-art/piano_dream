@@ -111,6 +111,7 @@ private:
     /// 返回 false 表示加载失败（调用方应中止后续动作）。
     bool ensureSongLoaded(int index);
     void startSongPlayback();
+    void pauseSongPlayback();
     void stopSongPlayback();
     void applyPracticeMode();
     void loadFavorites();
@@ -177,6 +178,8 @@ private:
     bool recording_ = false;
     bool playingRecording_ = false;
     bool songPlaying_ = false;
+    bool songPaused_ = false;
+    double pausedSongTick_ = 0.0;
     bool loopSong_ = false;
     bool settingsOpen_ = false;
     bool midiConnected_ = false; // 当前版本没有设备枚举服务时保持“未连接”诚实状态

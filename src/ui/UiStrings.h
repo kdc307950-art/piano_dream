@@ -30,6 +30,8 @@ inline const char* t(const char* chinese) {
         {"连接 MIDI 键盘后可直接演奏", "Connect a MIDI keyboard to play directly"},
         {"MIDI 设备扫描将在输入服务接入后启用", "MIDI scanning will be enabled with the input service"},
         {"实时跟练会话 · 和弦允许同拍容差", "Live practice session · chord timing tolerance enabled"},
+        {"播放已暂停", "Playback paused"},
+        {"乐谱跟练", "Score practice"}, {"钢琴卷帘", "Piano roll"}, {"练习统计", "Practice stats"},
         {"设置", "Settings"}, {"关闭", "Close"},
         {"让音乐，", "Make music, "}, {"触手可及。", "Within reach."},
         {"一架属于你的 88 键三角钢琴。支持电脑键盘、鼠标、多点触控、力度响应、延音踏板与 MIDI 导入导出。", "Your 88-key grand piano. Keyboard, mouse, touch, dynamics, sustain and MIDI import/export."},
@@ -114,6 +116,10 @@ inline constexpr const char* kMidiDisconnected = "MIDI 未连接";
 inline constexpr const char* kMidiHint = "连接 MIDI 键盘后可直接演奏";
 inline constexpr const char* kMidiScanPending = "MIDI 设备扫描将在输入服务接入后启用";
 inline constexpr const char* kPracticeHint = "实时跟练会话 · 和弦允许同拍容差";
+inline constexpr const char* kSongPaused = "播放已暂停";
+inline constexpr const char* kScorePractice = "乐谱跟练";
+inline constexpr const char* kPianoRoll = "钢琴卷帘";
+inline constexpr const char* kPracticeStats = "练习统计";
 inline constexpr const char* kSettings      = "设置";
 inline constexpr const char* kClose         = "关闭";
 
@@ -281,7 +287,8 @@ inline constexpr const char* kImpSumFailed      = "失败 %d 个";
 inline const std::vector<std::string>& allStrings() {
     static const std::vector<std::string> v = {
         kWindowTitle, kBrandTitle, kBrandSub, kMidiConnected, kMidiDisconnected,
-        kMidiHint, kMidiScanPending, kPracticeHint,
+        kMidiHint, kMidiScanPending, kPracticeHint, kSongPaused,
+        kScorePractice, kPianoRoll, kPracticeStats,
         kSettings, kClose,
         kEyebrow, kHeroLine1, kHeroAccent, kHeroDesc, kLiveSound,
         kInstrument, kInstrumentSub, kEngineLabel, kEngineAuto, kEngineSample, kEngineSynth,

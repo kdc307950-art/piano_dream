@@ -56,7 +56,7 @@ std::string clockText(double seconds) {
     return std::string(buf);
 }
 
-enum class CircleGlyph { Record, Play, Export, Practice, Previous, Next, Stop, Loop };
+enum class CircleGlyph { Record, Play, Pause, Export, Practice, Previous, Next, Stop, Loop };
 
 bool circleControl(UiContext& ui, Vector2 center, float radius, CircleGlyph glyph,
                    bool primary, bool enabled, bool active) {
@@ -95,6 +95,12 @@ bool circleControl(UiContext& ui, Vector2 center, float radius, CircleGlyph glyp
         DrawTriangle({ center.x - radius * 0.20f, center.y - radius * 0.34f },
                      { center.x - radius * 0.20f, center.y + radius * 0.34f },
                      { center.x + radius * 0.35f, center.y }, ink);
+        break;
+    case CircleGlyph::Pause:
+        DrawRectangleRec({ center.x - radius * 0.25f, center.y - radius * 0.30f,
+                           radius * 0.15f, radius * 0.60f }, ink);
+        DrawRectangleRec({ center.x + radius * 0.10f, center.y - radius * 0.30f,
+                           radius * 0.15f, radius * 0.60f }, ink);
         break;
     case CircleGlyph::Export:
         DrawRectangleLinesEx({ center.x - 9.0f, center.y - 11.0f, 17.0f, 21.0f }, 1.5f, ink);
@@ -782,8 +788,12 @@ void App::handleInput(float dt) {
         songPlaying_ = false;
         if (judge_.active()) judge_.finish(mixer_.currentFrame());
         if (loopSong_) {
+            songPaused_ = false;
+            pausedSongTick_ = 0.0;
             startSongPlayback();
         } else {
+            songPaused_ = false;
+            pausedSongTick_ = 0.0;
             setStatus(ui::t(ui::kSongIdle));
         }
     }
@@ -1477,9 +1487,10 @@ void App::drawTransportRow() {
         }
     }
     label(ui::t(ui::kPrevious), centerStart, true);
-    if (circleControl(ui_, { centerStart + controlStep, cy }, 22.0f, CircleGlyph::Play,
+    if (circleControl(ui_, { centerStart + controlStep, cy }, 22.0f,
+                      songPlaying_ ? CircleGlyph::Pause : CircleGlyph::Play,
                       true, !songs_.empty(), songPlaying_)) {
-        if (songPlaying_) stopSongPlayback(); else startSongPlayback();
+        if (songPlaying_) pauseSongPlayback(); else startSongPlayback();
     }
     if (circleControl(ui_, { centerStart + controlStep * 2.0f, cy }, 17.0f, CircleGlyph::Next,
                       false, !songs_.empty(), false)) {
@@ -1490,10 +1501,10 @@ void App::drawTransportRow() {
         }
     }
     if (circleControl(ui_, { centerStart + controlStep * 3.0f, cy }, 17.0f, CircleGlyph::Stop,
-                      false, recording_ || playingRecording_ || songPlaying_, false)) {
+                      false, recording_ || playingRecording_ || songPlaying_ || songPaused_, false)) {
         if (recording_) stopRecording();
         if (playingRecording_) stopPlayback();
-        if (songPlaying_) stopSongPlayback();
+        if (songPlaying_ || songPaused_) stopSongPlayback();
     }
     if (circleControl(ui_, { centerStart + controlStep * 4.0f, cy }, 17.0f, CircleGlyph::Loop,
                       false, !songs_.empty(), loopSong_))
@@ -1501,21 +1512,28 @@ void App::drawTransportRow() {
     const double songDuration = (!songs_.empty() && songIndex_ >= 0 &&
                                  songIndex_ < static_cast<int>(songs_.size()))
         ? songs_[static_cast<std::size_t>(songIndex_)].durationSeconds() : 0.0;
-    const double elapsed = songPlaying_ ? std::clamp(player_.progress(), 0.0, 1.0) * songDuration : 0.0;
+    const double elapsed = (songPlaying_ || songPaused_)
+        ? (songPlaying_ ? std::clamp(player_.progress(), 0.0, 1.0)
+                        : (songDuration > 0.0 ? std::clamp(pausedSongTick_ /
+                                                           static_cast<double>(songs_[static_cast<std::size_t>(songIndex_)].durationTicks()),
+                                                           0.0, 1.0) : 0.0)) * songDuration
+        : 0.0;
     const std::string timer = clockText(elapsed) + " / " + clockText(songDuration);
     fonts_.drawSmall(timer.c_str(), centerStart + controlStep * 1.0f - fonts_.smallWidth(timer.c_str()) * 0.5f,
                      r.y + 5.0f, theme::kMuted);
 
     const Rectangle wave{ r.x + r.width - 492.0f, r.y + 8.0f, 448.0f, 64.0f };
     widget::panel(wave, Color{ 11, 21, 34, 220 }, Color{ 42, 59, 79, 220 }, 0.12f);
+    const bool audioActive = recording_ || playingRecording_ || songPlaying_;
     const float peak = std::clamp(mixer_.peakLevel(), 0.02f, 1.0f);
     for (int i = 0; i < 76; ++i) {
         const std::size_t sample = scope_.empty() ? 0 :
             std::min(scope_.size() - 1, static_cast<std::size_t>(i * scope_.size() / 76));
         const float level = scope_.empty() ? peak : std::clamp(scope_[sample], 0.0f, 1.0f);
-        const float idleWave = std::fabs(std::sin(static_cast<float>(i) * 0.57f)) * 0.16f +
-                               std::fabs(std::sin(static_cast<float>(i) * 0.19f + 1.4f)) * 0.08f;
-        const float h = 5.0f + std::max(level * 34.0f, idleWave * 24.0f);
+        const float idleWave = audioActive
+            ? (std::fabs(std::sin(static_cast<float>(i) * 0.57f)) * 0.16f +
+               std::fabs(std::sin(static_cast<float>(i) * 0.19f + 1.4f)) * 0.08f) : 0.0f;
+        const float h = audioActive ? 5.0f + std::max(level * 34.0f, idleWave * 24.0f) : 2.0f;
         const float xx = wave.x + 14.0f + static_cast<float>(i) * (wave.width - 28.0f) / 75.0f;
         DrawLineEx({ xx, wave.y + wave.height * 0.5f - h * 0.5f },
                    { xx, wave.y + wave.height * 0.5f + h * 0.5f }, 1.3f,
@@ -1523,7 +1541,7 @@ void App::drawTransportRow() {
     }
     const float meterX = wave.x + wave.width - 12.0f;
     for (int i = 0; i < 12; ++i) {
-        const bool lit = i < static_cast<int>(std::ceil(peak * 12.0f));
+        const bool lit = audioActive && i < static_cast<int>(std::ceil(peak * 12.0f));
         DrawRectangleRounded({ meterX, wave.y + wave.height - 8.0f - i * 4.0f, 6.0f, 2.5f },
                              0.3f, 3, lit ? (i > 9 ? theme::kBad : theme::kGood)
                                          : Color{ 45, 61, 80, 220 });
@@ -1533,7 +1551,11 @@ void App::drawTransportRow() {
     const float progress = recording_ ? std::fmod(static_cast<double>(mixer_.currentFrame()) /
                                                    std::max(1.0, sampleRate_), 30.0) / 30.0
                                       : (playingRecording_ ? recordedPlayer_.progress()
-                                                            : (songPlaying_ ? static_cast<float>(player_.progress()) : 0.0f));
+                                      : ((songPlaying_ || songPaused_)
+                                           ? static_cast<float>(songPlaying_ ? player_.progress()
+                                                                              : (songs_.empty() ? 0.0 :
+                                                                                 pausedSongTick_ / std::max(1.0, static_cast<double>(songs_[static_cast<std::size_t>(songIndex_)].durationTicks()))))
+                                           : 0.0f));
     DrawRectangleRounded({ r.x, r.y + r.height - 5.0f, r.width * std::clamp(progress, 0.0f, 1.0f), 3.0f },
                          1.0f, 4, theme::kGold);
 }
@@ -1620,7 +1642,8 @@ void App::drawSongPanel() {
 
     const float navW = 132.0f;
     DrawRectangleRounded({ r.x, r.y, navW, r.height }, 0.08f, 8, Color{ 10, 19, 31, 190 });
-    const char* tabs[] = { "乐谱跟练", "钢琴卷帘", "练习统计" };
+    const char* tabs[] = { ui::t(ui::kScorePractice), ui::t(ui::kPianoRoll),
+                           ui::t(ui::kPracticeStats) };
     for (int i = 0; i < 3; ++i) {
         const Rectangle tab{ r.x + 10.0f, r.y + 16.0f + static_cast<float>(i) * 48.0f,
                              navW - 20.0f, 38.0f };
@@ -1677,8 +1700,11 @@ void App::drawSongPanel() {
         }
     }
 
-    if (songPlaying_) {
-        const float px = staffX + std::clamp(static_cast<float>(player_.progress()), 0.0f, 1.0f) * staffW;
+    if (songPlaying_ || songPaused_) {
+        const float progress = songPlaying_ ? static_cast<float>(player_.progress())
+            : (!songs_.empty() ? static_cast<float>(pausedSongTick_ /
+                std::max(1.0, static_cast<double>(songs_[static_cast<std::size_t>(songIndex_)].durationTicks()))) : 0.0f);
+        const float px = staffX + std::clamp(progress, 0.0f, 1.0f) * staffW;
         DrawLineEx({ px, staffY - 7.0f }, { px, staffY + 102.0f }, 2.0f,
                     Color{ 246, 210, 150, 210 });
         DrawCircleGradient({ px, staffY - 7.0f }, 8.0f, Color{ 246, 210, 150, 100 },
@@ -1710,7 +1736,10 @@ void App::drawSongPanel() {
                 ++drawn;
             }
         }
-        const float px = roll.x + (songPlaying_ ? std::clamp(static_cast<float>(player_.progress()), 0.0f, 1.0f) : 0.0f) * roll.width;
+        const float progress = songPlaying_ ? static_cast<float>(player_.progress())
+            : (!songs_.empty() ? static_cast<float>(pausedSongTick_ /
+                std::max(1.0, static_cast<double>(songs_[static_cast<std::size_t>(songIndex_)].durationTicks()))) : 0.0f);
+        const float px = roll.x + std::clamp(progress, 0.0f, 1.0f) * roll.width;
         DrawLineEx({ px, roll.y - 4.0f }, { px, roll.y + roll.height + 4.0f }, 2.0f,
                     Color{ 246, 210, 150, 220 });
         fonts_.drawSmall("A0", roll.x, roll.y + roll.height + 6.0f, theme::kMuted);
@@ -2031,12 +2060,34 @@ void App::drawGuide() {
     const Rectangle& r = layout_.guide;
     if (r.height < 60.0f) {
         widget::panel(r, Color{ 12, 22, 35, 220 }, Color{ 42, 59, 79, 220 }, 0.12f);
-        fonts_.drawSmall("?", r.x + 18.0f, r.y + 10.0f, theme::kGoldLight);
+        DrawCircleLines(static_cast<int>(r.x + 24.0f), static_cast<int>(r.y + 18.0f), 10.0f,
+                        theme::kGoldLight);
+        fonts_.drawSmall("?", r.x + 21.0f, r.y + 10.0f, theme::kGoldLight);
         fonts_.drawSmall("选择曲目后点击播放曲目，或开启跟练判定开始练习。",
                          r.x + 44.0f, r.y + 10.0f, theme::kMuted);
-        const char* shortcut = "F1 键位提示   空格 延音   R 录制   M 节拍器   ← → 切换曲目";
-        const float sw = fonts_.smallWidth(shortcut);
-        fonts_.drawSmall(shortcut, r.x + r.width - sw - 18.0f, r.y + 10.0f, theme::kMutedDim);
+        const float hx = r.x + r.width - 498.0f;
+        DrawCircleLines(static_cast<int>(hx), static_cast<int>(r.y + 17.0f), 8.0f,
+                        Color{ 176, 195, 215, 220 });
+        DrawRectangleRounded({ hx - 10.0f, r.y + 16.0f, 4.0f, 10.0f }, 0.4f, 4,
+                             Color{ 176, 195, 215, 220 });
+        DrawRectangleRounded({ hx + 6.0f, r.y + 16.0f, 4.0f, 10.0f }, 0.4f, 4,
+                             Color{ 176, 195, 215, 220 });
+        fonts_.drawSmall("快捷键", hx + 18.0f, r.y + 10.0f, theme::kMutedDim);
+        float sx = hx + 66.0f;
+        auto keycap = [&](const char* key) {
+            const float kw = std::max(22.0f, fonts_.smallWidth(key) + 10.0f);
+            widget::panel({ sx, r.y + 7.0f, kw, 20.0f }, Color{ 24, 37, 53, 255 },
+                          Color{ 76, 94, 116, 230 }, 0.18f);
+            fonts_.drawSmall(key, sx + (kw - fonts_.smallWidth(key)) * 0.5f,
+                             r.y + 11.0f, theme::kInk);
+            sx += kw + 6.0f;
+        };
+        auto hint = [&](const char* text) {
+            fonts_.drawSmall(text, sx, r.y + 10.0f, theme::kMutedDim);
+            sx += fonts_.smallWidth(text) + 10.0f;
+        };
+        keycap("空格"); hint("延音"); keycap("R"); hint("录制"); keycap("M"); hint("节拍器");
+        keycap("←"); keycap("→"); hint("切换曲目");
         return;
     }
     const float gap = 14.0f;
@@ -2256,7 +2307,7 @@ void App::drawTrackModal() {
 // ===========================================================================
 
 void App::startRecording() {
-    if (songPlaying_) stopSongPlayback();
+    if (songPlaying_ || songPaused_) stopSongPlayback();
     if (playingRecording_) stopPlayback();
     recorder_.start(mixer_.currentFrame());
     if (sustainUser_) recorder_.capture(mixer_.currentFrame(), MsgType::Sustain, 0, 127);
@@ -2283,7 +2334,7 @@ void App::stopRecording() {
 
 void App::startPlayback() {
     if (!recorder_.hasNotes()) return;
-    if (songPlaying_) stopSongPlayback();
+    if (songPlaying_ || songPaused_) stopSongPlayback();
     recordedPlayer_.setEvents(recorder_.events(), sampleRate_);
     recordedPlayer_.play(mixer_.currentFrame() + static_cast<std::uint64_t>(sampleRate_ * 0.08));
     playingRecording_ = true;
@@ -2480,6 +2531,8 @@ void App::refreshSongList() {
 void App::selectSong(int index) {
     if (index < 0 || index >= static_cast<int>(songs_.size())) return;
     if (songPlaying_) stopSongPlayback();
+    songPaused_ = false;
+    pausedSongTick_ = 0.0;
     if (!ensureSongLoaded(index)) return;
     songIndex_ = index;
     player_.setSong(songs_[static_cast<std::size_t>(index)], sampleRate_);
@@ -2520,20 +2573,38 @@ void App::startSongPlayback() {
     player_.setTranspose(static_cast<int>(std::lround(transposeF_)));
     applyPracticeMode();
 
+    const bool resuming = songPaused_;
+    const double startTick = resuming ? pausedSongTick_ : 0.0;
     const std::uint64_t anchor = mixer_.currentFrame() + static_cast<std::uint64_t>(sampleRate_ * 0.12);
-    if (practiceMode_ != 0) judge_.load(player_.song(), anchor, speed_, player_.transpose());
+    if (practiceMode_ != 0 && !resuming)
+        judge_.load(player_.song(), anchor, speed_, player_.transpose());
 
-    player_.play(anchor, 0.0);
+    player_.play(anchor, startTick);
     songPlaying_ = true;
+    songPaused_ = false;
+    pausedSongTick_ = 0.0;
     metronome_.setEnabled(metronomeOn_ || practiceMode_ == 2);
     setStatus(std::string(ui::t(ui::kPlaySong)) + " · " + songs_[static_cast<std::size_t>(songIndex_)].title);
 }
 
-void App::stopSongPlayback() {
+void App::pauseSongPlayback() {
     if (!songPlaying_) return;
+    pausedSongTick_ = std::max(0.0, player_.positionTick());
     player_.stop();
     device_.pushReleaseSource(Source::Song);
     songPlaying_ = false;
+    songPaused_ = true;
+    metronome_.setEnabled(metronomeOn_);
+    setStatus(ui::t(ui::kSongPaused));
+}
+
+void App::stopSongPlayback() {
+    if (!songPlaying_ && !songPaused_) return;
+    player_.stop();
+    device_.pushReleaseSource(Source::Song);
+    songPlaying_ = false;
+    songPaused_ = false;
+    pausedSongTick_ = 0.0;
     metronome_.setEnabled(metronomeOn_);
     if (judge_.active()) judge_.finish(mixer_.currentFrame());
     setStatus(ui::t(ui::kSongIdle));
