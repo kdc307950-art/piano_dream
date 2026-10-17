@@ -26,6 +26,11 @@ inline const char* t(const char* chinese) {
     if (gLanguage == Language::Chinese || !chinese) return chinese;
     static const std::unordered_map<std::string_view, const char*> en = {
         {"Grand Studio · C++ 88 键钢琴", "Grand Studio · C++ 88-Key Piano"},
+        {"MIDI 已连接", "MIDI connected"}, {"MIDI 未连接", "MIDI not connected"},
+        {"连接 MIDI 键盘后可直接演奏", "Connect a MIDI keyboard to play directly"},
+        {"MIDI 设备扫描将在输入服务接入后启用", "MIDI scanning will be enabled with the input service"},
+        {"实时跟练会话 · 和弦允许同拍容差", "Live practice session · chord timing tolerance enabled"},
+        {"设置", "Settings"}, {"关闭", "Close"},
         {"让音乐，", "Make music, "}, {"触手可及。", "Within reach."},
         {"一架属于你的 88 键三角钢琴。支持电脑键盘、鼠标、多点触控、力度响应、延音踏板与 MIDI 导入导出。", "Your 88-key grand piano. Keyboard, mouse, touch, dynamics, sustain and MIDI import/export."},
         {"音色引擎", "Sound engine"}, {"原声钢琴 · 自动", "Acoustic piano · Auto"},
@@ -34,7 +39,9 @@ inline const char* t(const char* chinese) {
         {"踏板", "Pedal"}, {"开启", "On"}, {"关闭", "Off"},
         {"录制", "Record"}, {"开始录制", "Start recording"}, {"结束录制", "Stop recording"},
         {"回放", "Playback"}, {"■ 停止", "■ Stop"}, {"节拍器", "Metronome"},
-        {"关闭节拍器", "Disable metronome"}, {"搜索曲目", "Search songs"},
+        {"关闭节拍器", "Disable metronome"}, {"三角钢琴", "Grand piano"},
+        {"上一曲", "Previous"}, {"下一曲", "Next"}, {"循环", "Loop"},
+        {"搜索曲目", "Search songs"},
         {"全部难度", "All levels"}, {"入门", "Easy"}, {"进阶", "Advanced"},
         {"只看收藏", "Favorites only"}, {"播放曲目", "Play song"}, {"■ 停止曲目", "■ Stop song"},
         {"完整播放", "Full playback"}, {"仅伴奏跟练", "Practice with accompaniment"}, {"节拍引导", "Beat guide"},
@@ -102,6 +109,13 @@ inline const char* t(const char* chinese) {
 inline constexpr const char* kWindowTitle   = "Grand Studio · C++ 88 键钢琴";
 inline constexpr const char* kBrandTitle    = "GRAND STUDIO";
 inline constexpr const char* kBrandSub      = "DIGITAL PIANO EXPERIENCE";
+inline constexpr const char* kMidiConnected = "MIDI 已连接";
+inline constexpr const char* kMidiDisconnected = "MIDI 未连接";
+inline constexpr const char* kMidiHint = "连接 MIDI 键盘后可直接演奏";
+inline constexpr const char* kMidiScanPending = "MIDI 设备扫描将在输入服务接入后启用";
+inline constexpr const char* kPracticeHint = "实时跟练会话 · 和弦允许同拍容差";
+inline constexpr const char* kSettings      = "设置";
+inline constexpr const char* kClose         = "关闭";
 
 // ---- Hero ----
 inline constexpr const char* kEyebrow       = "THE ART OF SOUND · NO. 01";
@@ -145,6 +159,10 @@ inline constexpr const char* kExportMidi    = "↓ 导出 MIDI";
 inline constexpr const char* kMetronome     = "节拍器";
 inline constexpr const char* kMetronomeOff  = "关闭节拍器";
 inline constexpr const char* kBpm           = "BPM";
+inline constexpr const char* kInstrumentName = "三角钢琴";
+inline constexpr const char* kPrevious      = "上一曲";
+inline constexpr const char* kNext          = "下一曲";
+inline constexpr const char* kLoop          = "循环";
 
 // ---- 曲目面板 ----
 inline constexpr const char* kSearchHint    = "搜索曲目";
@@ -262,14 +280,16 @@ inline constexpr const char* kImpSumFailed      = "失败 %d 个";
 
 inline const std::vector<std::string>& allStrings() {
     static const std::vector<std::string> v = {
-        kWindowTitle, kBrandTitle, kBrandSub,
+        kWindowTitle, kBrandTitle, kBrandSub, kMidiConnected, kMidiDisconnected,
+        kMidiHint, kMidiScanPending, kPracticeHint,
+        kSettings, kClose,
         kEyebrow, kHeroLine1, kHeroAccent, kHeroDesc, kLiveSound,
         kInstrument, kInstrumentSub, kEngineLabel, kEngineAuto, kEngineSample, kEngineSynth,
         kVolumeLabel, kReverbLabel, kPedalLabel, kPedalWord, kOn, kOff,
         kFxLabel, kFxOff, kFxLow, kFxStandard, kFxHigh, kFxReducedMotion,
         kRailTip, kKeyRangeTip, kPolyTip, kPlayingPrefix, kPlayingSuffix,
         kRecordStart, kRecordStop, kPlayback, kStop, kExportMidi,
-        kMetronome, kMetronomeOff, kBpm,
+        kMetronome, kMetronomeOff, kBpm, kInstrumentName, kPrevious, kNext, kLoop,
         kSearchHint, kDiffAll, kDiffEasy, kDiffHard, kFavAdd, kFavRemove, kFavOnly,
         kPlaySong, kStopSong, kExportSong, kImportHint,
         kModeFull, kModeAccomp, kModeGuide,

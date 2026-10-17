@@ -144,6 +144,19 @@ void PianoView::draw(const Mixer& mixer, const InputRouter& input, const FontBoo
     const Rectangle bed{ vp.x - 6.0f, vp.y - 6.0f, vp.width + 12.0f, vp.height + 10.0f };
     widget::softShadow(bed, 0.05f, 6.0f, 58);
     DrawRectangleRounded(bed, 0.05f, 8, Color{ 9, 12, 17, 255 });
+    // 三角钢琴两侧的金属琴颊：让 88 键从“平面白键”变成完整的乐器结构。
+    const Rectangle cheekL{ bed.x - 13.0f, bed.y + 2.0f, 13.0f, bed.height - 4.0f };
+    const Rectangle cheekR{ bed.x + bed.width, bed.y + 2.0f, 13.0f, bed.height - 4.0f };
+    DrawRectangleRounded(cheekL, 0.22f, 8, Color{ 43, 32, 20, 255 });
+    DrawRectangleRounded(cheekR, 0.22f, 8, Color{ 43, 32, 20, 255 });
+    DrawRectangleGradientV(static_cast<int>(cheekL.x), static_cast<int>(cheekL.y),
+                           static_cast<int>(cheekL.width), static_cast<int>(cheekL.height),
+                           Color{ 250, 202, 125, 175 }, Color{ 96, 60, 28, 220 });
+    DrawRectangleGradientV(static_cast<int>(cheekR.x), static_cast<int>(cheekR.y),
+                           static_cast<int>(cheekR.width), static_cast<int>(cheekR.height),
+                           Color{ 250, 202, 125, 175 }, Color{ 96, 60, 28, 220 });
+    DrawRectangleRoundedLinesEx(cheekL, 0.22f, 8, 1.0f, Color{ 230, 184, 112, 160 });
+    DrawRectangleRoundedLinesEx(cheekR, 0.22f, 8, 1.0f, Color{ 230, 184, 112, 160 });
     DrawRectangleRounded({ bed.x + 10.0f, bed.y + 1.0f, bed.width - 20.0f, 1.0f }, 1.0f, 2,
                          Color{ 255, 255, 255, 14 });
 
@@ -192,8 +205,8 @@ void PianoView::draw(const Mixer& mixer, const InputRouter& input, const FontBoo
                                    r.width - radius * 1.2f, 1.6f }, 1.0f, 2, theme::kWhiteKeyEdge);
         }
 
-        // 每个 C 键标注音名
-        if (k.midi % 12 == 0) {
+        // 音域标注：目标稿显示 A0 / B0 与每个 C 八度，便于初学者定位。
+        if (k.midi == kMidiLow || k.midi == kMidiLow + 2 || k.midi % 12 == 0) {
             const std::string name = noteName(k.midi);
             const float tw = fonts.smallWidth(name.c_str());
             fonts.drawSmall(name.c_str(), r.x + (r.width - tw) * 0.5f, r.y + r.height - 44.0f,

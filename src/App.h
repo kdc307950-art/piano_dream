@@ -83,6 +83,7 @@ private:
     void drawGuide();
     void drawFooter();
     void drawOverlays();
+    void drawSettingsOverlay();
 
     // ---------------- 业务动作 ----------------
     void pushSustainIfChanged();
@@ -168,7 +169,7 @@ private:
     float reverb_ = 0.28f;
     float speed_ = 1.0f;
     float transposeF_ = 0.0f;
-    float bpmF_ = 100.0f;
+    float bpmF_ = 120.0f;
 
     bool sustainUser_ = false;
     bool sustainEffective_ = false;
@@ -176,6 +177,9 @@ private:
     bool recording_ = false;
     bool playingRecording_ = false;
     bool songPlaying_ = false;
+    bool loopSong_ = false;
+    bool settingsOpen_ = false;
+    bool midiConnected_ = false; // 当前版本没有设备枚举服务时保持“未连接”诚实状态
     bool followKeyboard_ = false;
     bool metronomeOn_ = false;
     bool muteMelody_ = false;

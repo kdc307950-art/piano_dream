@@ -34,6 +34,8 @@ If you prefer a portable package, download `GrandStudioPiano-1.0-win64.zip`, ext
 
 The library contains five built-in songs: Canon, Für Elise, Moonlight Sonata, Castle in the Sky, and River Flows in You. Select a song, then use **Play song** or one of the practice modes.
 
+The desktop workspace follows the supplied design reference: a deep navy and champagne-gold studio shell, a song library, night-stage hero, four independent control cards, and circular transport controls. The header exposes the honest MIDI connection state and a settings panel for sustain, note effects, and reduced motion. Score practice, piano roll, and practice statistics all read from the same song event list and playback clock.
+
 ## Audio and samples
 
 The default package includes 66 FLAC anchors from [FreePats Upright Piano KW](https://github.com/freepats/upright-piano-KW). The source describes recordings of a Kawai upright piano and publishes them under CC0 1.0. The files are mapped by note name, and `vL` / `vH` layers are selected from the actual playing velocity. Missing anchors or unavailable audio backends fall back to the built-in synthesizer.
