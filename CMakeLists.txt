@@ -151,7 +151,7 @@ install(TARGETS piano piano-cli
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/assets")
     install(DIRECTORY assets DESTINATION .)
 endif()
-install(FILES README.md THIRD_PARTY_LICENSES.md DESTINATION .)
+install(FILES README.md README_EN.md THIRD_PARTY_LICENSES.md DESTINATION .)
 
 set(CPACK_PACKAGE_NAME "GrandStudioPiano")
 set(CPACK_PACKAGE_VENDOR "Grand Studio")
@@ -166,7 +166,12 @@ set(CPACK_GENERATOR "ZIP")
 include(CPack)
 
 enable_testing()
-add_test(NAME piano_selftest COMMAND piano-cli --selftest)
+# The executables intentionally live next to the source tree so users can
+# double-click them. Keep the test command relative to the build directory;
+# this also survives the Windows ASCII `subst` build fallback after the drive
+# mapping is removed.
+add_test(NAME piano_selftest COMMAND ../piano-cli --selftest)
+set_tests_properties(piano_selftest PROPERTIES LABELS "offline;selftest")
 
 message(STATUS "Grand Studio Piano · raylib = 6.0（本地源码优先，缺失才联网）")
 message(STATUS "  产物：piano.exe (GUI，双击玩) / piano-cli.exe (控制台，--selftest)")

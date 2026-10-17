@@ -26,6 +26,7 @@ $Root = $PSScriptRoot
 Set-Location $Root
 $cmake = Get-Command cmake -ErrorAction SilentlyContinue
 if (-not $cmake) { throw '找不到 CMake。请安装 CMake 3.16 或更高版本并加入 PATH。' }
+$ctest = Get-Command ctest -ErrorAction SilentlyContinue
 
 # Keep the embedded font corpus in sync with user-facing strings. Python is
 # optional for consumers of a pre-generated source tree; when it is absent we
@@ -84,7 +85,14 @@ try {
         if ($LASTEXITCODE -ne 0) { $exitCode = $LASTEXITCODE }
     }
     if ($exitCode -eq 0 -and $SelfTest) {
-        & (Join-Path $Root 'piano-cli.exe') '--selftest'
+        if ($ctest) {
+            # Run through CTest while still on the ASCII subst drive. This keeps
+            # the generated test command and its mapped executable in the same
+            # namespace on Windows projects whose real path contains Chinese.
+            & $ctest.Source --test-dir build --output-on-failure
+        } else {
+            & (Join-Path (Get-Location) 'piano-cli.exe') '--selftest'
+        }
         if ($LASTEXITCODE -ne 0) { $exitCode = $LASTEXITCODE }
     }
     if ($exitCode -eq 0 -and $Package) {
@@ -93,6 +101,10 @@ try {
         # mapped cache reliably.
         & $cmake.Source --build build --target package --parallel ([Math]::Max(1, $Jobs))
         if ($LASTEXITCODE -ne 0) { $exitCode = $LASTEXITCODE }
+        if ($exitCode -eq 0) {
+            $packages = @(Get-ChildItem (Join-Path (Get-Location) 'build') -Filter 'GrandStudioPiano-*.zip' -File)
+            if ($packages.Count -eq 0) { throw 'CPack 未生成 GrandStudioPiano ZIP 包。' }
+        }
     }
     if ($exitCode -eq 0 -and $Installer) {
         $stage = Join-Path (Get-Location) 'build\installer-stage'
@@ -100,6 +112,15 @@ try {
         & $cmake.Source --install build --prefix $stage
         if ($LASTEXITCODE -ne 0) { $exitCode = $LASTEXITCODE }
         if ($exitCode -eq 0) {
+            $requiredStageFiles = @(
+                'piano.exe', 'piano-cli.exe', 'README.md', 'README_EN.md',
+                'THIRD_PARTY_LICENSES.md', 'assets\samples\FREEPATS_SOURCE.json',
+                'assets\samples\FREEPATS_CC0_LICENSE.txt')
+            foreach ($relative in $requiredStageFiles) {
+                if (-not (Test-Path (Join-Path $stage $relative))) {
+                    throw "安装暂存目录缺少必需文件：$relative"
+                }
+            }
             $makensis = Get-Command makensis -ErrorAction SilentlyContinue
             if (-not $makensis) {
                 foreach ($candidate in @(

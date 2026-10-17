@@ -70,6 +70,8 @@ cd "C:\Users\孔德草\Desktop\游戏开发\钢琴模拟器\piano"
 
 也可以**直接双击 `build.cmd`**（等价于不带参数运行，编译完会停住等你按键）。
 
+`-SelfTest` 现在通过 CTest 执行 `piano_selftest`，因此命令行、IDE 和 CI 使用同一套测试入口；也可以直接运行 `ctest --test-dir build --output-on-failure`。
+
 发布包由 CPack 生成，包含 `piano.exe`、`piano-cli.exe`、真实钢琴采样目录和许可证。
 如果工程路径含中文，请使用 `build.cmd -Package`；脚本会自动使用临时 ASCII 盘符，
 避免 Ninja 无法解析中文路径。不要直接复用脚本创建的 `build/` 目录运行 CMake，

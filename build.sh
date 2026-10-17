@@ -49,6 +49,18 @@ GENERATOR_ARGS=()
 if command -v ninja >/dev/null; then GENERATOR_ARGS=(-G Ninja); fi
 cmake -S . -B build "${GENERATOR_ARGS[@]}" -DCMAKE_BUILD_TYPE=Release -DPIANO_TSAN=OFF
 cmake --build build --parallel "${JOBS:-4}"
-if [ "$SELFTEST" -eq 1 ]; then ./piano-cli --selftest; fi
-if [ "$PACKAGE" -eq 1 ]; then cmake --build build --target package --parallel "${JOBS:-4}"; fi
+if [ "$SELFTEST" -eq 1 ]; then
+  if command -v ctest >/dev/null; then
+    ctest --test-dir build --output-on-failure
+  else
+    ./piano-cli --selftest
+  fi
+fi
+if [ "$PACKAGE" -eq 1 ]; then
+  cmake --build build --target package --parallel "${JOBS:-4}"
+  compgen -G 'build/GrandStudioPiano-*.zip' >/dev/null || {
+    echo "CPack 未生成 GrandStudioPiano ZIP 包" >&2
+    exit 1
+  }
+fi
 if [ "$RUN" -eq 1 ]; then ./piano & fi

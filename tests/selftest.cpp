@@ -338,6 +338,14 @@ void testLanguageTable() {
           std::string(ui::t(ui::kFxHigh)) == "High" &&
           std::string(ui::t(ui::kFxReducedMotion)) == "Reduced motion",
           "特效设置文案有英文翻译");
+    check(std::string(ui::t(ui::kMidiDisconnected)) == "MIDI not connected" &&
+          std::string(ui::t(ui::kSettings)) == "Settings" &&
+          std::string(ui::t(ui::kInstrumentName)) == "Grand piano",
+          "工作区状态与设置文案有英文翻译");
+    check(std::string(ui::t(ui::kMidiHint)) == "Connect a MIDI keyboard to play directly" &&
+          std::string(ui::t(ui::kPracticeHint)) ==
+              "Live practice session · chord timing tolerance enabled",
+          "新增状态提示文案有英文翻译");
     ui::setLanguage(ui::Language::Chinese);
 }
 
@@ -926,6 +934,18 @@ void testNoteFx() {
               std::fabs(off.keys.y - 476.0f) < 1e-3f && std::fabs(off.transport.y - 668.0f) < 1e-3f &&
               std::fabs(off.song.y - 776.0f) < 1e-3f,
               "桌面布局：三栏/琴键/运输栏/谱面位置稳定");
+
+        UiLayout narrow;
+        narrow.compute(1280.0f, 880.0f);
+        check(narrow.library.width >= 300.0f && narrow.controls.width >= 300.0f &&
+              narrow.heroPanel.width > 0.0f && narrow.song.height >= 150.0f,
+              "窄桌面布局：三栏仍有可用宽度");
+        UiLayout wide;
+        wide.compute(1920.0f, 1080.0f);
+        check(wide.library.x + wide.library.width < wide.heroPanel.x &&
+              wide.heroPanel.x + wide.heroPanel.width < wide.controls.x &&
+              wide.keys.width == wide.console.width,
+              "宽桌面布局：三栏与键盘横向边界不溢出");
     }
 }
 

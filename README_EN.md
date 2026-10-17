@@ -51,7 +51,7 @@ The source record and license are kept in:
 Requirements: C++20, CMake 3.16+, MinGW-w64 or another supported C++ toolchain, Python 3 for glyph generation, and the vendored raylib/miniaudio dependencies.
 
 ```powershell
-.\build.cmd -SelfTest    # build and run 229 offline tests
+.\build.cmd -SelfTest    # build and run the offline CTest suite
 .\build.cmd -Run         # build and launch the desktop app
 .\build.cmd -Package     # build the portable ZIP package
 .\build.cmd -Installer   # build the NSIS installer
@@ -61,9 +61,9 @@ The project path can contain Chinese characters. The Windows build script tempor
 
 ## Validation
 
-- 229 self-tests pass.
+- 233 offline self-tests pass through the CTest `piano_selftest` target.
 - 66 sample files decode successfully at runtime.
-- CPack ZIP package contains the executables, samples, UI assets, and licenses.
+- CPack ZIP package contains both manuals, the executables, samples, UI assets, and licenses.
 - NSIS 3.13 installer builds successfully.
 - Glyph generation and whitespace checks pass.
 

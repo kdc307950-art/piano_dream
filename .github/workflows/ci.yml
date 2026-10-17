@@ -54,7 +54,7 @@ jobs:
       - name: Build
         run: cmake --build build-ci --parallel
       - name: Selftest
-        run: ./piano-cli --selftest
+        run: ctest --test-dir build-ci --output-on-failure
       - name: ThreadSanitizer configure and build
         if: matrix.os == 'ubuntu-22.04'
         run: cmake -S . -B build-tsan -DCMAKE_BUILD_TYPE=Debug -DPIANO_TSAN=ON
