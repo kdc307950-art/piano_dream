@@ -6,6 +6,8 @@ REM   build.cmd                 build to build\piano.exe
 REM   build.cmd -SelfTest       build, then run the offline self-test
 REM   build.cmd -Run            build, then launch the GUI
 REM   build.cmd -Clean          wipe build\ first
+REM   build.cmd -Package        build, then create a self-contained ZIP package
+REM   build.cmd -Installer      build, stage files, then create a NSIS installer
 REM
 REM This file is deliberately ASCII-only.
 REM   cmd.exe parses batch files using the console code page. If the file

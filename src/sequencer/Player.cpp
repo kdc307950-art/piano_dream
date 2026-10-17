@@ -148,11 +148,11 @@ std::uint32_t Player::process(void* user, Mixer& mixer,
     auto* self = static_cast<Player*>(user);
     if (!self) return maxFrames;
 
-    // 未播放时立即返回，不触碰任何共享数据 —— 这是 UI 线程安全重建的前提
-    if (!self->playing_.load(std::memory_order_acquire)) return maxFrames;
-
+    // 先登记进入临界区，再检查 playing_。如果 UI 恰好在入口并发停止，
+    // 它要么看到 busy_ 并等待，要么本次检查到 false 后安全返回；不能在
+    // 「检查 playing_」与「登记 busy_」之间留下事件表被修改的窗口。
     BusyGuard guard(&self->busy_);
-    // UI 可能在第一次 playing 检查后暂停了调度，必须再次检查。
+    // 未播放时立即返回，不触碰任何共享数据。
     if (!self->playing_.load(std::memory_order_acquire)) return maxFrames;
     self->lastBlockStart_.store(blockStartFrame, std::memory_order_relaxed);
     self->positionFrame_.store(static_cast<double>(blockStartFrame), std::memory_order_relaxed);

@@ -1,5 +1,16 @@
 # Grand Studio · C++ 88 键钢琴模拟器
 
+[![Windows CI](https://github.com/kdc307950-art/piano_dream/actions/workflows/ci.yml/badge.svg)](https://github.com/kdc307950-art/piano_dream/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/kdc307950-art/piano_dream?display_name=tag)](https://github.com/kdc307950-art/piano_dream/releases/latest)
+
+**中文说明 · English manual:** [README_EN.md](README_EN.md)
+
+**下载：** [最新 Windows 安装器](https://github.com/kdc307950-art/piano_dream/releases/latest) · [Releases 页面](https://github.com/kdc307950-art/piano_dream/releases)
+
+![Grand Studio Piano desktop UI](assets/ui-mockups/desktop-ui-concept.png)
+
+Grand Studio Piano 是一款离线运行的 88 键数字钢琴桌面应用，提供真实钢琴采样、物理合成音色、MIDI 导入导出、录制回放、节拍器和跟练判定。
+
 把原先的单文件网页钢琴（`钢琴模拟.html`）用 C++ 重做的一份完整实现。
 不是「演示片段」，而是可以直接运行、可以继续往上加功能的工程：
 88 键显示、电脑键盘 / 鼠标 / 多点触控、力度响应、延音踏板、复音管理、
@@ -34,7 +45,7 @@ C:\Users\孔德草\Desktop\游戏开发\钢琴模拟器\piano\piano.exe
 
 界面上的按钮都是中文的，鼠标点一下就知道：
 
-- **播放曲目** —— 自动演奏内置的 4 首曲子，琴键会跟着亮
+- **播放曲目** —— 自动演奏内置的 5 首曲子，琴键会跟着亮
 - **开始录制** → 弹一段 → **结束录制** → **回放** 或 **导出 MIDI**
 - **节拍器** —— 打拍子；旁边可以调 BPM
 - **仅伴奏跟练** —— 只放伴奏，你来弹旋律，右侧会实时打分
@@ -53,9 +64,16 @@ cd "C:\Users\孔德草\Desktop\游戏开发\钢琴模拟器\piano"
 .\build.cmd -SelfTest    # 编译 + 跑离线自测（不需要声卡、不开窗口）
 .\build.cmd -Run         # 编译 + 启动界面
 .\build.cmd -Clean       # 先清空中间产物再编译
+.\build.cmd -Package     # 编译 + 生成可分发 ZIP（build/GrandStudioPiano-*.zip）
+.\build.cmd -Installer   # 编译 + 生成 NSIS 安装器（需要 NSIS 3.x / makensis.exe）
 ```
 
 也可以**直接双击 `build.cmd`**（等价于不带参数运行，编译完会停住等你按键）。
+
+发布包由 CPack 生成，包含 `piano.exe`、`piano-cli.exe`、真实钢琴采样目录和许可证。
+如果工程路径含中文，请使用 `build.cmd -Package`；脚本会自动使用临时 ASCII 盘符，
+避免 Ninja 无法解析中文路径。不要直接复用脚本创建的 `build/` 目录运行 CMake，
+因为其中的构建缓存记录了该临时盘符。
 
 构建前会自动扫描 `src/` 下的 C++ 字符串字面量并更新 `src/ui/GeneratedGlyphs.h`，确保运行时错误信息和状态文字也进入字形图集。可用 `python tools/generate_glyphs.py --check` 检查生成文件是否过期。
 
@@ -261,21 +279,21 @@ cp libraylib.a <工程>/third_party/raylib/lib/
 | 录制 / 回放 | ✅ | 时间戳用采样帧，回放走音频调度器（精确） |
 | 导出 MIDI | ✅ | Format 0，含 Tempo 与结尾补 NoteOff / 踏板抬起 |
 | 导入 MIDI | ✅ | Format 0/1，拖拽导入 |
-| 内置曲目自动演奏 | ✅ | 4 首，旋律 + 伴奏双轨 |
+| 内置曲目自动演奏 | ✅ | 5 首，旋律 + 伴奏双轨 |
 | 跟练判定 | ✅ | 完美 / 不错 / 漏音 / 多余 + 连击 + 准确率 |
 | 节拍器 | ✅ | 咔哒声在音频回调里调度，落点精确 |
 | 混响 / 主音量 / 压缩 | ✅ | Freeverb + 软削波 + 软拐点压缩 |
 | 波形显示 | ✅ | 取自混音器实际输出峰值 |
 | 收藏 | ✅ | 落地到 `favorites.txt` |
 | 曲目搜索 | ⚠️ | 仅支持 ASCII 输入（raylib 未接 IME） |
-| 真实采样音源 | ⚠️ | 代码就绪，但**不内置采样文件**（见下） |
+| 真实采样音源 | ✅ | FreePats Kawai Upright Piano 的 CC0 FLAC 锚点采样 |
 
 ### 关于采样与许可
 
-工程**刻意不附带任何钢琴采样文件**。开源钢琴采样库（如 Salamander Grand Piano、
-Iowa 钢琴采样等）的许可证各不相同，公开发布前必须自行确认。
-
-放法：把采样丢进 `assets/samples/`，文件名即锚点音高，支持
+工程随包附带 FreePats 的 Kawai Upright Piano 真实录音采样，来源与许可证文件位于
+`assets/samples/FREEPATS_SOURCE.json` 和 `assets/samples/FREEPATS_CC0_LICENSE.txt`。
+该库由 FreePats 说明为 Kawai 立式钢琴录音，并以 CC0 发布。也可以把自有采样放入
+`assets/samples/`，文件名即锚点音高，支持
 `C4.wav` / `Ds4.wav` / `Eb4.wav` / `060.wav`，格式支持 WAV / FLAC / MP3 / OGG。
 锚点越密音质越好（建议每 3~4 个半音一个锚点）；距最近锚点超过 12 个半音的音
 会自动回退到合成音色。
@@ -484,7 +502,7 @@ tick 480 的音符必须在**第 24000 帧**触发，第 23999 帧不能触发�
 
 ## 八、已知限制
 
-1. **不内置钢琴采样**。默认使用离线合成音色；放入采样文件即可切换。
+1. **真实采样按最近锚点变调**。当前随包提供 FreePats 的 CC0 FLAC 锚点采样；缺少锚点或解码失败时自动回退到离线合成音色。
 2. **搜索框只支持 ASCII**。raylib 未接输入法，中文曲名搜索会失效；曲目下拉不受影响。
 3. **多点触控取决于平台**。raylib 桌面端通过 `GetTouchPointCount()` 暴露触点，
    部分 Windows 环境可能只上报单点；鼠标路径始终可用。

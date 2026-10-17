@@ -2,16 +2,25 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
-CLEAN=0; RUN=0; SELFTEST=0
+CLEAN=0; RUN=0; SELFTEST=0; PACKAGE=0
 for arg in "$@"; do
   case "$arg" in
     --clean) CLEAN=1 ;;
     --run) RUN=1 ;;
     --selftest) SELFTEST=1 ;;
+    --package) PACKAGE=1 ;;
     *) echo "未知参数：$arg" >&2; exit 2 ;;
   esac
 done
 command -v cmake >/dev/null || { echo "找不到 CMake 3.16 或更高版本" >&2; exit 1; }
+
+if command -v python3 >/dev/null; then
+  python3 tools/generate_glyphs.py
+elif command -v python >/dev/null; then
+  python tools/generate_glyphs.py
+else
+  echo "警告：找不到 Python，跳过字形文案生成" >&2
+fi
 
 # 非 ASCII 路径兜底：CMake 以 UTF-8 写构建文件，而 Ninja / MinGW 按系统 ANSI
 # 代码页（GBK）解析路径 —— 中文路径会让 ninja 在 FindFirstFileExA 阶段直接报
@@ -41,4 +50,5 @@ if command -v ninja >/dev/null; then GENERATOR_ARGS=(-G Ninja); fi
 cmake -S . -B build "${GENERATOR_ARGS[@]}" -DCMAKE_BUILD_TYPE=Release -DPIANO_TSAN=OFF
 cmake --build build --parallel "${JOBS:-4}"
 if [ "$SELFTEST" -eq 1 ]; then ./piano-cli --selftest; fi
+if [ "$PACKAGE" -eq 1 ]; then cmake --build build --target package --parallel "${JOBS:-4}"; fi
 if [ "$RUN" -eq 1 ]; then ./piano & fi

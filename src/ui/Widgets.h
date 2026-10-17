@@ -341,7 +341,13 @@ inline bool dropdown(UiContext& ui, int id, Rectangle r, const std::vector<std::
 
         const Rectangle inner{ list.x, list.y + 4.0f, list.width, list.height - 8.0f };
         scissorLogical(ui, inner);
-        for (int i = 0; i < total; ++i) {
+        // Only visit rows that can intersect the clipped viewport. Large imported
+        // song libraries may contain hundreds of entries; drawing every row here
+        // is wasted work because the list shows at most kDropdownMaxRows.
+        const int firstRow = std::max(0, static_cast<int>(std::floor(ui.dropdownScroll / rowH)) - 1);
+        const int lastRow = std::min(total - 1,
+                                     static_cast<int>(std::ceil((ui.dropdownScroll + inner.height) / rowH)) + 1);
+        for (int i = firstRow; i <= lastRow; ++i) {
             const Rectangle row{ list.x + 4.0f,
                                  list.y + 4.0f + rowH * static_cast<float>(i) - ui.dropdownScroll,
                                  list.width - 8.0f, rowH };
@@ -387,7 +393,11 @@ inline void drawDeferredDropdowns(UiContext& ui) {
         const Rectangle inner{ dd.list.x, dd.list.y + 4.0f,
                                dd.list.width, dd.list.height - 8.0f };
         scissorLogical(ui, inner);
-        for (std::size_t i = 0; i < dd.items.size(); ++i) {
+        const int total = static_cast<int>(dd.items.size());
+        const int firstRow = std::max(0, static_cast<int>(std::floor(dd.scroll / rowH)) - 1);
+        const int lastRow = std::min(total - 1,
+                                     static_cast<int>(std::ceil((dd.scroll + inner.height) / rowH)) + 1);
+        for (int i = firstRow; i <= lastRow; ++i) {
             const Rectangle row{ dd.list.x + 4.0f,
                                  dd.list.y + 4.0f + rowH * static_cast<float>(i) - dd.scroll,
                                  dd.list.width - 8.0f, rowH };
@@ -399,13 +409,12 @@ inline void drawDeferredDropdowns(UiContext& ui) {
                                      Color{ 213, 173, 106, 190 });
             }
             if (ui.fonts) {
-                const bool sel = static_cast<int>(i) == dd.index;
-                ui.fonts->drawSmall(dd.items[i].c_str(), row.x + 8.0f, row.y + 7.0f,
+                const bool sel = i == dd.index;
+                ui.fonts->drawSmall(dd.items[static_cast<std::size_t>(i)].c_str(), row.x + 8.0f, row.y + 7.0f,
                                     sel ? theme::kGoldLight : theme::kInk);
             }
         }
         EndScissorMode();
-        const int total = static_cast<int>(dd.items.size());
         const int visible = std::max(1, std::min(total, kDropdownMaxRows));
         const float maxScroll = rowH * static_cast<float>(std::max(0, total - visible));
         drawDropdownScrollbar(dd.list, maxScroll, dd.scroll, visible, total);

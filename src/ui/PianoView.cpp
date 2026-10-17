@@ -11,7 +11,7 @@ void PianoView::setLayout(const UiLayout& layout) {
     // 几何只与键宽有关；每帧重建 88 个键是浪费，这里做一次廉价判断
     const bool needGeom = whites_.empty() ||
                           std::fabs(layout.keyW - geomKeyW_) > 0.01f ||
-                          std::fabs(layout.blackW - (geomKeyW_ * 0.636f)) > 0.01f;
+                          std::fabs(layout.blackW - geomBlackW_) > 0.01f;
     layout_ = layout;
     if (needGeom) {
         rebuildGeometry();
@@ -32,12 +32,17 @@ void PianoView::rebuildGeometry() {
         if (isBlackKey(midi)) {
             // 黑键骑在相邻两个白键的接缝上，与 HTML 原版的排版一致
             blacks_.push_back(KeyGeom{ midi, static_cast<float>(whiteIndex) * layout_.keyW - layout_.blackW * 0.5f, true });
+            keyCenters_[static_cast<std::size_t>(midi - kMidiLow)] =
+                static_cast<float>(whiteIndex) * layout_.keyW;
         } else {
             whites_.push_back(KeyGeom{ midi, static_cast<float>(whiteIndex) * layout_.keyW, false });
+            keyCenters_[static_cast<std::size_t>(midi - kMidiLow)] =
+                (static_cast<float>(whiteIndex) + 0.5f) * layout_.keyW;
             ++whiteIndex;
         }
     }
     geomKeyW_ = layout_.keyW;
+    geomBlackW_ = layout_.blackW;
     scrollX_ = std::clamp(scrollX_, 0.0f, maxScroll());
     targetScroll_ = scrollX_;
 }
@@ -90,20 +95,8 @@ float PianoView::xOfNote(int midi) const {
 bool PianoView::keyTopCenter(int midi, float& x, float& y) const {
     x = 0.0f;
     y = layout_.keys.y;
-    if (midi < kMidiLow || midi > kMidiHigh) return false;
-
-    float cx = 0.0f;
-    bool found = false;
-    for (const auto& k : whites_) {
-        if (k.midi == midi) { cx = k.x + layout_.keyW * 0.5f; found = true; break; }
-    }
-    if (!found) {
-        for (const auto& k : blacks_) {
-            if (k.midi == midi) { cx = k.x + layout_.blackW * 0.5f; found = true; break; }
-        }
-    }
-    if (!found) return false;
-
+    if (midi < kMidiLow || midi > kMidiHigh || whites_.empty()) return false;
+    const float cx = keyCenters_[static_cast<std::size_t>(midi - kMidiLow)];
     x = layout_.keys.x + cx - scrollX_;
     return x >= layout_.keys.x && x <= layout_.keys.x + layout_.keys.width;
 }
@@ -207,7 +200,7 @@ void PianoView::draw(const Mixer& mixer, const InputRouter& input, const FontBoo
                             active ? Color{ 96, 68, 30, 255 } : Color{ 116, 126, 142, 255 });
         }
         // 电脑键盘快捷键标签
-        if (map_) {
+        if (showKeyHints_ && map_) {
             if (const char* lb = map_->labelForNote(k.midi)) {
                 const float tw = fonts.smallWidth(lb);
                 const float bx = r.x + (r.width - std::max(19.0f, tw + 8.0f)) * 0.5f;
@@ -259,7 +252,7 @@ void PianoView::draw(const Mixer& mixer, const InputRouter& input, const FontBoo
                        1.0f, Color{ 255, 255, 255, 22 });
         }
 
-        if (map_) {
+        if (showKeyHints_ && map_) {
             if (const char* lb = map_->labelForNote(k.midi)) {
                 const float tw = fonts.smallWidth(lb);
                 fonts.drawSmall(lb, r.x + (r.width - tw) * 0.5f, r.y + r.height - 20.0f,

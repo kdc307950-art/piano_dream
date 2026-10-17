@@ -77,6 +77,26 @@ std::string importSummary(int imported, int dup, int nonMidi, int failed) {
     return out;
 }
 
+/// 生成不覆盖已有导出的路径。时间戳只精确到秒，连续点击导出时很容易
+/// 得到同名文件；软件版应保留每次用户明确发起的导出。
+std::filesystem::path uniqueExportPath(const std::filesystem::path& dir,
+                                       const std::string& filename) {
+    std::error_code ec;
+    std::filesystem::path candidate = dir / filename;
+    if (!std::filesystem::exists(candidate, ec)) return candidate;
+
+    const std::filesystem::path stem = candidate.stem();
+    const std::filesystem::path ext = candidate.extension();
+    for (unsigned int n = 2; n < 1000000; ++n) {
+        candidate = dir / (stem.string() + "_" + std::to_string(n) + ext.string());
+        ec.clear();
+        if (!std::filesystem::exists(candidate, ec)) return candidate;
+    }
+    // Practically unreachable; return the original path so the normal save
+    // error is surfaced instead of looping forever.
+    return dir / filename;
+}
+
 void anchorWorkingDirectoryToExecutable() {
 #ifdef _WIN32
     wchar_t path[kMaxWindowsPath]{};
@@ -104,12 +124,43 @@ void anchorWorkingDirectoryToExecutable() {
 bool App::init(std::string* log) {
     anchorWorkingDirectoryToExecutable();
     migrateLegacyUserData();   // 旧版本把配置写在 cwd：存在则复制到用户数据目录
+    // 语言必须在创建窗口前加载，否则已保存的英文设置会让窗口标题仍然
+    // 使用中文，而窗口内部文案随后才切换，造成启动瞬间的不一致。
+    loadLanguage();
     SetTraceLogLevel(LOG_WARNING);
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT | FLAG_VSYNC_HINT);
 #ifdef __APPLE__
     SetConfigFlags(FLAG_WINDOW_HIGHDPI);
 #endif
     InitWindow(windowWidth_, windowHeight_, ui::t(ui::kWindowTitle));
+    if (!IsWindowReady()) {
+        if (log) *log += "[window] 无法创建图形窗口（请检查显卡驱动或显示会话）\n";
+        return false;
+    }
+    // 中央舞台的图片只作为视觉底图；所有文字、按钮和交互仍由 raylib
+    // 控件绘制。使用 ASCII 相对路径，兼容中文工程目录。
+    for (const char* path : { "assets/ui-mockups/hero-piano-stage.png",
+                              "../assets/ui-mockups/hero-piano-stage.png" }) {
+        if (FileExists(path)) {
+            heroTexture_ = LoadTexture(path);
+            heroTextureReady_ = IsTextureValid(heroTexture_);
+            if (heroTextureReady_) {
+                SetTextureFilter(heroTexture_, TEXTURE_FILTER_BILINEAR);
+                break;
+            }
+        }
+    }
+    for (const char* path : { "assets/ui-mockups/song-cover-sheet.png",
+                              "../assets/ui-mockups/song-cover-sheet.png" }) {
+        if (FileExists(path)) {
+            coverSheet_ = LoadTexture(path);
+            coverSheetReady_ = IsTextureValid(coverSheet_);
+            if (coverSheetReady_) {
+                SetTextureFilter(coverSheet_, TEXTURE_FILTER_BILINEAR);
+                break;
+            }
+        }
+    }
     SetWindowMinSize(1100, 880);
     SetTargetFPS(60);
     SetExitKey(KEY_NULL);          // 禁用 ESC 退出，避免演奏时误触
@@ -140,8 +191,6 @@ bool App::init(std::string* log) {
     layout_.compute(1520.0f, 1000.0f);
     sampleLog_ += "[fx] level=" + std::to_string(fxLevel_) +
                   " reducedMotion=" + (fxReducedMotion_ ? "1" : "0") + "\n";
-
-    loadLanguage();
 
     // ---- 曲目先建好，曲名也要进入字形图集 ----
     songs_ = builtinSongs();
@@ -193,9 +242,9 @@ bool App::init(std::string* log) {
     for (const char* dir : { "assets/samples", "../assets/samples" }) {
         std::string probe;
         const int n = samples_.loadDirectory(dir, &probe);
+        sampleLog_ += probe;
         if (n > 0) {
             loadedSamples = n;
-            sampleLog_ += probe;
             break;
         }
     }
@@ -260,7 +309,9 @@ bool App::init(std::string* log) {
     refreshSongList();
     if (!songs_.empty()) selectSong(0);
 
-    if (loadedSamples == 0) toast(ui::t(ui::kSampleNone));
+    // 合成器是没有外部采样时的正常回退路径；仅写入启动日志，避免每次启动
+    // 都在主工作区覆盖一条提示，影响桌面端的首屏可用性。
+    if (loadedSamples == 0 && log) *log += "[audio] " + std::string(ui::t(ui::kSampleNone)) + "\n";
 
     if (log) {
         *log += sampleLog_;
@@ -375,6 +426,16 @@ void App::shutdown() {
     device_.stop();
     mixer_.setVisualEventQueue(nullptr);   // 设备停止后摘除视觉事件队列
     fxLayer_.unload();
+    if (heroTextureReady_) {
+        UnloadTexture(heroTexture_);
+        heroTexture_ = {};
+        heroTextureReady_ = false;
+    }
+    if (coverSheetReady_) {
+        UnloadTexture(coverSheet_);
+        coverSheet_ = {};
+        coverSheetReady_ = false;
+    }
     fonts_.unload();
     if (IsWindowReady()) CloseWindow();
 }
@@ -504,6 +565,11 @@ void App::handleInput(float dt) {
 
     input_.update();
     pianoView_.updateScrollAnimation(dt);
+
+    // 键位提示默认隐藏，F1 可在演奏教学与纯视觉模式之间切换。
+    if (!searchFocused_ && !dropdownOpen_ && !trackModalOpen_ && IsKeyPressed(KEY_F1)) {
+        showKeyHints_ = !showKeyHints_;
+    }
 
     // ---- 轨道选择模态的键盘确认/取消 ----
     if (trackModalOpen_) {
@@ -760,39 +826,53 @@ void App::draw(float dt) {
 
 void App::drawTopbar() {
     const Rectangle& r = layout_.topbar;
+    widget::softShadow(r, 0.12f, 4.0f, 32);
+    widget::panel(r, Color{ 12, 22, 35, 235 }, Color{ 42, 59, 79, 255 }, 0.12f);
 
-    // 徽标：深色铜牌上五条高低错落的金线，像声波也像琴键
-    const Rectangle logo{ r.x, r.y + 3.0f, 40.0f, 38.0f };
-    widget::softShadow(logo, 0.24f, 3.0f, 40);
+    // 徽标：深色铜牌上五条高低错落的金线，保持与原版品牌一致。
+    const Rectangle logo{ r.x + 10.0f, r.y + 9.0f, 40.0f, 40.0f };
     widget::panel(logo, Color{ 46, 36, 24, 255 }, Color{ 148, 124, 84, 255 }, 0.24f);
     widget::bevel(logo, 26, 30);
     const float barHeights[5] = { 10.0f, 17.0f, 13.0f, 19.0f, 11.0f };
     for (int i = 0; i < 5; ++i) {
-        const float x = logo.x + 8.0f + static_cast<float>(i) * 6.0f;
+        const float bx = logo.x + 8.0f + static_cast<float>(i) * 6.0f;
         const float half = barHeights[i] * 0.5f;
         const float cy = logo.y + logo.height * 0.5f;
-        DrawLineEx({ x, cy - half }, { x, cy + half }, 2.4f,
-                   (i % 2 == 0) ? theme::kGold : theme::kGoldLight);
+        DrawLineEx({ bx, cy - half }, { bx, cy + half }, 2.4f,
+                    (i % 2 == 0) ? theme::kGold : theme::kGoldLight);
     }
 
-    fonts_.drawSmall(ui::t(ui::kBrandTitle), logo.x + 52.0f, logo.y + 4.0f, theme::kInk);
-    fonts_.drawSmall(ui::t(ui::kBrandSub), logo.x + 52.0f, logo.y + 20.0f, theme::kMutedDim);
+    fonts_.drawTitle(ui::t(ui::kBrandTitle), logo.x + 54.0f, r.y + 8.0f, theme::kInk);
+    fonts_.drawSmall(ui::t(ui::kBrandSub), logo.x + 56.0f, r.y + 39.0f, theme::kMutedDim);
 
-    // 状态胶囊：玻璃质感 + 指示灯带一圈光晕
+    const char* range = ui::t(ui::kInstrumentSub);
+    fonts_.drawSmall(range, r.x + r.width - 600.0f, r.y + 22.0f, theme::kMuted);
+
+    // 状态胶囊、设置/电平图标和语言按钮组成右侧工具区。
     const std::string st = statusText_;
     const float tw = fonts_.smallWidth(st.c_str());
-    const float pillW = tw + 46.0f;
-    const Rectangle pill{ r.x + r.width - pillW, r.y + 5.0f, pillW, 32.0f };
+    const float pillW = std::clamp(tw + 42.0f, 150.0f, 230.0f);
+    const Rectangle pill{ r.x + r.width - pillW - 168.0f, r.y + 13.0f, pillW, 32.0f };
     widget::panel(pill, Color{ 15, 23, 35, 220 }, Color{ 58, 72, 92, 255 }, 0.5f);
-    widget::bevel(pill, 18, 20);
     const Vector2 dot{ pill.x + 16.0f, pill.y + pill.height * 0.5f };
-    const Color dotColor = statusWarn_ ? theme::kWarn : theme::kGood;
-    DrawCircleGradient(dot, 9.0f, Color{ dotColor.r, dotColor.g, dotColor.b, 100 },
-                       Color{ dotColor.r, dotColor.g, dotColor.b, 0 });
+    // 当前版本没有实时 MIDI 设备枚举服务，状态点不伪装成“已连接”；
+    // 仅在确实发生错误时使用警告色，正常工作状态保持中性。
+    const Color dotColor = statusWarn_ ? theme::kWarn : Color{ 145, 160, 177, 255 };
     DrawCircleV(dot, 3.5f, dotColor);
     fonts_.drawSmall(st.c_str(), pill.x + 27.0f, pill.y + 9.0f, Color{ 184, 196, 210, 255 });
 
-    const Rectangle languageButton{ pill.x - 68.0f, pill.y, 58.0f, pill.height };
+    const Rectangle tools{ pill.x + pill.width + 10.0f, pill.y, 92.0f, pill.height };
+    widget::panel(tools, Color{ 15, 23, 35, 220 }, Color{ 58, 72, 92, 255 }, 0.35f);
+    DrawLineEx({ tools.x + 46.0f, tools.y + 7.0f }, { tools.x + 46.0f, tools.y + 25.0f },
+               1.0f, Color{ 100, 116, 139, 180 });
+    DrawCircleV({ tools.x + 23.0f, tools.y + 16.0f }, 5.0f, theme::kMuted);
+    DrawLineEx({ tools.x + 16.0f, tools.y + 16.0f }, { tools.x + 30.0f, tools.y + 16.0f },
+               2.0f, theme::kPanel);
+    for (int i = 0; i < 3; ++i)
+        DrawRectangleRounded({ tools.x + 60.0f + i * 8.0f, tools.y + 20.0f - i * 5.0f,
+                               4.0f, 8.0f + i * 5.0f }, 0.25f, 3, theme::kMuted);
+
+    const Rectangle languageButton{ r.x + r.width - 58.0f, r.y + 13.0f, 48.0f, 32.0f };
     const char* languageLabel = ui::language() == ui::Language::Chinese ? "EN" : "中文";
     if (widget::button(ui_, 9000, languageButton, languageLabel, false, true)) {
         ui::setLanguage(ui::language() == ui::Language::Chinese
@@ -803,29 +883,7 @@ void App::drawTopbar() {
 }
 
 void App::drawHero() {
-    const Rectangle& r = layout_.hero;
-
-    // 常态头部保持一行，把纵向空间留给琴键；大标题只在空状态提示中显示。
-    fonts_.drawSmall(ui::t(ui::kEyebrow), r.x, r.y + 4.0f, theme::kGold);
-    const float eyebrowW = fonts_.smallWidth(ui::t(ui::kEyebrow));
-    fonts_.drawSmall(ui::t(ui::kHeroDesc), r.x + eyebrowW + 18.0f, r.y + 4.0f,
-                     Color{ 158, 172, 189, 255 });
-
-    // 六段真实电平表：历史峰值来自音频线程的 atomic peakLevel()。
-    const Rectangle meter{ r.x + r.width - 220.0f, r.y + 5.0f, 220.0f, 14.0f };
-    fonts_.drawSmall(ui::t(ui::kLiveSound), meter.x - 70.0f, meter.y + 1.0f, theme::kMuted);
-    for (int i = 0; i < 6; ++i) {
-        const std::size_t sample = scope_.empty() ? 0 :
-            std::min(scope_.size() - 1, scope_.size() - 1 - static_cast<std::size_t>(i * 4));
-        const float level = scope_.empty() ? mixer_.peakLevel() : std::clamp(scope_[sample], 0.0f, 1.0f);
-        const float x = meter.x + static_cast<float>(i) * 35.0f;
-        const Color c = i >= 5 ? theme::kWarn : (i >= 4 ? theme::kGold : theme::kGood);
-        const bool lit = level > static_cast<float>(i + 1) / 6.0f;
-        const Rectangle seg{ x, meter.y, 29.0f, meter.height };
-        DrawRectangleRounded(seg, 0.35f, 4, lit ? c : Color{ 38, 50, 66, 255 });
-        if (lit) DrawRectangleRounded({ seg.x, seg.y, seg.width, seg.height * 0.45f }, 0.35f, 4,
-                                      Color{ 255, 255, 255, 34 });
-    }
+    // 顶栏已经承载品牌与状态；首屏主视觉在 drawHeroPanel() 中绘制。
 }
 
 void App::drawFxStage() {
@@ -838,35 +896,164 @@ void App::drawFxStage() {
 }
 
 void App::drawConsole() {
-    const Rectangle& r = layout_.console;
-    widget::softShadow(r, 0.035f, 8.0f, 66);
-    widget::panel(r, theme::kPanel, theme::kLineSoft, 0.035f);
-    // 顶部高光：一丝暖色，像灯光落在漆面琴身上
-    DrawRectangleRounded({ r.x + 18.0f, r.y, r.width - 36.0f, 1.0f }, 1.0f, 4,
-                         Color{ 236, 220, 190, 22 });
-
-    // 头部
-    fonts_.drawBody(ui::t(ui::kInstrument), layout_.header.x, layout_.header.y, theme::kInk);
-    fonts_.drawSmall(ui::t(ui::kInstrumentSub), layout_.header.x, layout_.header.y + 22.0f, theme::kMutedDim);
-
-    const std::string badge = samples_.empty()
-        ? std::string(ui::t(ui::kSynthBadge))
-        : ("● " + std::to_string(samples_.size()) + " 组真实采样");
-    const float bw = fonts_.smallWidth(badge.c_str());
-    const Rectangle bp{ layout_.header.x + layout_.header.width - bw - 28.0f,
-                        layout_.header.y + 3.0f, bw + 24.0f, 28.0f };
-    widget::panel(bp, Color{ 202, 162, 107, 14 }, Color{ 150, 118, 70, 120 }, 0.5f);
-    fonts_.drawSmall(badge.c_str(), bp.x + 12.0f, bp.y + 7.0f, Color{ 236, 206, 152, 255 });
-
-    drawFxStage();
+    // 三栏首屏：曲库、品牌舞台、音色控制。
+    drawLibraryPane();
+    drawHeroPanel();
+    drawControlsRow();
     drawKeyboardSection();
     drawTransportRow();
     drawSongPanel();
-    // 下拉列表必须在琴键、运输栏和曲目面板之后绘制，避免被后续内容盖住。
-    drawControlsRow();
 }
 
-void App::drawControlsRow() {
+void App::drawLibraryPane() {
+    const Rectangle& r = layout_.library;
+    widget::softShadow(r, 0.08f, 5.0f, 46);
+    widget::panel(r, Color{ 13, 23, 36, 248 }, theme::kLine, 0.08f);
+
+    const float navW = 126.0f;
+    DrawRectangleRounded({ r.x, r.y, navW, r.height }, 0.08f, 8, Color{ 11, 20, 32, 180 });
+    fonts_.drawBody("音", r.x + 18.0f, r.y + 18.0f, theme::kInk);
+    fonts_.drawBody("曲库", r.x + 48.0f, r.y + 17.0f, theme::kInk);
+
+    const char* nav[] = { "全部曲目", "经典古典", "流行音乐", "影视原声", "练习曲目", "我的收藏" };
+    for (int i = 0; i < 6; ++i) {
+        const Rectangle item{ r.x + 8.0f, r.y + 56.0f + static_cast<float>(i) * 42.0f,
+                              navW - 16.0f, 34.0f };
+        const bool active = (i == 5 && showFavoritesOnly_) ||
+                            (i == 0 && !showFavoritesOnly_ && difficultyFilter_ == 0) ||
+                            (i == 1 && !showFavoritesOnly_ && difficultyFilter_ == 1) ||
+                            (i == 2 && !showFavoritesOnly_ && difficultyFilter_ == 2);
+        if (active) widget::panel(item, Color{ 150, 112, 58, 128 }, Color{ 206, 162, 96, 255 }, 0.18f);
+        const char* icon = i == 0 ? "曲" : (i == 5 ? "★" : "·");
+        fonts_.drawBody(icon, item.x + 14.0f, item.y + 7.0f,
+                        active ? theme::kGoldLight : theme::kMuted);
+        fonts_.drawSmall(nav[i], item.x + 42.0f, item.y + 9.0f,
+                         active ? theme::kInk : theme::kMuted);
+        if (ui_.mousePressed && ui_.hovered(item) && !ui_.consumedClick) {
+            showFavoritesOnly_ = i == 5;
+            if (i == 0) difficultyFilter_ = 0;
+            else if (i == 1) difficultyFilter_ = 1;
+            else if (i == 2) difficultyFilter_ = 2;
+            else if (i >= 3 && i <= 4) difficultyFilter_ = 0;
+            refreshSongList();
+            ui_.consumedClick = true;
+        }
+    }
+
+    const float x = r.x + navW + 14.0f;
+    const float rightW = r.width - navW - 24.0f;
+    const Rectangle search{ x, r.y + 14.0f, rightW, 34.0f };
+    widget::panel(search, searchFocused_ ? Color{ 26, 38, 55, 255 } : Color{ 19, 29, 43, 255 },
+                  searchFocused_ ? theme::kGold : theme::kLineSoft, 0.22f);
+    DrawCircleLines(static_cast<int>(search.x + 18.0f), static_cast<int>(search.y + 16.0f),
+                    5.0f, theme::kMuted);
+    DrawLineEx({ search.x + 22.0f, search.y + 20.0f }, { search.x + 26.0f, search.y + 24.0f },
+               1.5f, theme::kMuted);
+    if (ui_.mousePressed && ui_.hovered(search) && !ui_.consumedClick) {
+        searchFocused_ = true;
+        ui_.consumedClick = true;
+    } else if (ui_.mousePressed && !ui_.hovered(search) && !ui_.consumedClick && searchFocused_) {
+        searchFocused_ = false;
+        refreshSongList();
+        ui_.consumedClick = true;
+    }
+    const std::string shown = searchText_.empty() && !searchFocused_
+        ? std::string(ui::t(ui::kSearchHint))
+        : searchText_ + (searchFocused_ ? "|" : "");
+    fonts_.drawSmall(shown.c_str(), search.x + 34.0f, search.y + 10.0f,
+                     searchText_.empty() && !searchFocused_ ? theme::kMutedDim : theme::kInk);
+
+    const int visible = std::min(5, static_cast<int>(songView_.size()));
+    const float listY = search.y + search.height + 10.0f;
+    for (int rowIndex = 0; rowIndex < visible; ++rowIndex) {
+        const int songIndex = songView_[static_cast<std::size_t>(rowIndex)];
+        const Song& song = songs_[static_cast<std::size_t>(songIndex)];
+        const Rectangle row{ x, listY + static_cast<float>(rowIndex) * 50.0f, rightW, 44.0f };
+        const bool active = songIndex == songIndex_;
+        const bool hover = ui_.hovered(row);
+        if (active || hover)
+            widget::panel(row, active ? Color{ 59, 48, 35, 230 } : Color{ 26, 38, 55, 230 },
+                          active ? theme::kGold : theme::kLineSoft, 0.16f);
+        const Rectangle thumb{ row.x + 6.0f, row.y + 5.0f, 42.0f, 34.0f };
+        widget::panel(thumb, Color{ 28, 42, 58, 255 }, Color{ 70, 88, 110, 180 }, 0.12f);
+        if (coverSheetReady_) {
+            static constexpr Rectangle coverRects[5] = {
+                { 14.0f, 8.0f, 490.0f, 493.0f },
+                { 520.0f, 8.0f, 490.0f, 493.0f },
+                { 14.0f, 514.0f, 490.0f, 499.0f },
+                { 520.0f, 514.0f, 490.0f, 499.0f },
+                { 14.0f, 1027.0f, 490.0f, 499.0f }
+            };
+            const Rectangle src = coverRects[static_cast<std::size_t>(std::min(rowIndex, 4))];
+            DrawTexturePro(coverSheet_, src, thumb, { 0.0f, 0.0f }, 0.0f, WHITE);
+            DrawRectangleRoundedLinesEx(thumb, 0.12f, 5, 1.0f,
+                                        active ? Color{ 238, 194, 118, 190 } : Color{ 70, 88, 110, 180 });
+        } else {
+            DrawCircleGradient({ thumb.x + 24.0f, thumb.y + 16.0f }, 11.0f,
+                               Color{ 213, 173, 106, 55 }, Color{ 20, 33, 48, 0 });
+        }
+        fonts_.drawSmall(song.title.c_str(), row.x + 56.0f, row.y + 8.0f,
+                         active ? theme::kInk : Color{ 205, 214, 226, 255 });
+        fonts_.drawSmall(song.composer.c_str(), row.x + 56.0f, row.y + 25.0f, theme::kMuted);
+        if (isFavorite(songIndex)) {
+            DrawPoly({ row.x + row.width - 22.0f, row.y + 21.0f }, 5, 6.5f, 0.0f, theme::kGoldLight);
+        }
+        if (hover && ui_.mousePressed && !ui_.consumedClick) {
+            selectSong(songIndex);
+            ui_.consumedClick = true;
+        }
+    }
+}
+
+void App::drawHeroPanel() {
+    const Rectangle& r = layout_.heroPanel;
+    widget::softShadow(r, 0.08f, 5.0f, 48);
+    widget::panel(r, Color{ 12, 22, 35, 255 }, theme::kLine, 0.08f);
+
+    widget::scissorLogical(ui_, r);
+    if (heroTextureReady_) {
+        const Rectangle src{ 0.0f, 0.0f, static_cast<float>(heroTexture_.width),
+                             static_cast<float>(heroTexture_.height) };
+        DrawTexturePro(heroTexture_, src, r, { 0.0f, 0.0f }, 0.0f, WHITE);
+    }
+    DrawRectangleGradientV(static_cast<int>(r.x), static_cast<int>(r.y),
+                           static_cast<int>(r.width), static_cast<int>(r.height),
+                           Color{ 4, 10, 18, 155 }, Color{ 4, 10, 18, 72 });
+    DrawRectangleGradientV(static_cast<int>(r.x), static_cast<int>(r.y + r.height * 0.58f),
+                           static_cast<int>(r.width), static_cast<int>(r.height * 0.42f),
+                           Color{ 4, 10, 18, 20 }, Color{ 4, 10, 18, 190 });
+
+    const char* title = ui::t(ui::kBrandTitle);
+    const float tw = fonts_.titleWidth(title);
+    fonts_.drawTitle(title, r.x + (r.width - tw) * 0.5f, r.y + 132.0f, theme::kGoldLight);
+    const char* sub = ui::t(ui::kBrandSub);
+    const float sw = fonts_.bodyWidth(sub);
+    fonts_.drawBody(sub, r.x + (r.width - sw) * 0.5f, r.y + 180.0f, theme::kInk);
+    const float iw = fonts_.smallWidth(ui::t(ui::kInstrumentSub));
+    fonts_.drawSmall(ui::t(ui::kInstrumentSub), r.x + (r.width - iw) * 0.5f,
+                     r.y + 218.0f, Color{ 206, 215, 227, 225 });
+
+    // 金色点阵波形，呼应参考图和音频波形。
+    const float cy = r.y + r.height - 48.0f;
+    for (int i = 0; i < 52; ++i) {
+        const float t = static_cast<float>(i) / 51.0f;
+        const float wave = std::sin(t * 8.0f + 0.45f) * 12.0f + std::sin(t * 18.0f) * 5.0f;
+        const float amp = (1.0f - std::fabs(2.0f * t - 1.0f) * 0.38f);
+        DrawCircleV({ r.x + 20.0f + t * (r.width - 40.0f), cy + wave },
+                    1.7f, Color{ 246, 210, 150, static_cast<unsigned char>(140 * amp) });
+        if (i % 2 == 0)
+            DrawLineEx({ r.x + 20.0f + t * (r.width - 40.0f), cy + wave },
+                       { r.x + 20.0f + t * (r.width - 40.0f), cy + wave + 9.0f * amp },
+                       1.0f, Color{ 213, 173, 106, static_cast<unsigned char>(95 * amp) });
+    }
+    EndScissorMode();
+
+    widget::panel({ r.x + 12.0f, r.y + 12.0f, 92.0f, 26.0f },
+                   Color{ 8, 15, 25, 160 }, Color{ 120, 104, 78, 120 }, 0.2f);
+    fonts_.drawSmall(ui::t(ui::kEyebrow), r.x + 22.0f, r.y + 19.0f, theme::kGoldLight);
+}
+
+void App::drawControlsLegacy() {
     const Rectangle& r = layout_.controls;
     const bool compact = r.width < 1200.0f;
     const float y0 = r.y;
@@ -956,7 +1143,79 @@ void App::drawControlsRow() {
     }
 }
 
+void App::drawControlsRow() {
+    const Rectangle& r = layout_.controls;
+    widget::softShadow(r, 0.08f, 5.0f, 46);
+    widget::panel(r, Color{ 13, 23, 36, 248 }, theme::kLine, 0.08f);
+    fonts_.drawBody("控制台", r.x + 22.0f, r.y + 18.0f, theme::kInk);
+    fonts_.drawSmall("音色、音量与演奏设置", r.x + 22.0f, r.y + 44.0f, theme::kMuted);
+
+    const float x = r.x + 22.0f;
+    const float w = r.width - 44.0f;
+    const float y0 = r.y + 64.0f;
+    // 右侧控制台保持四个独立的视觉层级：音色、音量、混响、演奏扩展。
+    // 控件仍共享同一套状态与命中区域，只增加卡片底色和描边。
+    const Color cardFill{ 16, 28, 43, 190 };
+    const Color cardLine{ 42, 59, 79, 210 };
+    widget::panel({ x - 8.0f, y0 - 8.0f, w + 16.0f, 60.0f }, cardFill, cardLine, 0.14f);
+    widget::panel({ x - 8.0f, y0 + 56.0f, w + 16.0f, 48.0f }, cardFill, cardLine, 0.14f);
+    widget::panel({ x - 8.0f, y0 + 104.0f, w + 16.0f, 48.0f }, cardFill, cardLine, 0.14f);
+    widget::panel({ x - 8.0f, y0 + 160.0f, w + 16.0f, 136.0f }, cardFill, cardLine, 0.14f);
+    fonts_.drawSmall(ui::t(ui::kEngineLabel), x, y0, theme::kMutedDim);
+    {
+        const std::vector<std::string> items{ ui::t(ui::kEngineAuto), ui::t(ui::kEngineSample),
+                                              ui::t(ui::kEngineSynth) };
+        int idx = engineMode_;
+        if (widget::dropdown(ui_, 1101, { x, y0 + 18.0f, w, 34.0f }, items, idx,
+                             dropdownOpen_, dropdownId_)) {
+            engineMode_ = idx;
+            mixer_.setEngineMode(static_cast<Mixer::EngineMode>(idx));
+            toast(idx == 2 ? ui::t(ui::kEngineSynth) : (idx == 1 ? ui::t(ui::kEngineSample)
+                                                                  : ui::t(ui::kEngineAuto)));
+        }
+    }
+
+    float volume = volume_ * 100.0f;
+    if (widget::slider(ui_, 1102, { x, y0 + 64.0f, w, 34.0f }, ui::t(ui::kVolumeLabel),
+                       percent(volume_).c_str(), volume, 0.0f, 100.0f)) {
+        volume_ = volume / 100.0f;
+        mixer_.setMasterVolume(volume_);
+    }
+
+    float reverb = reverb_ * 100.0f;
+    if (widget::slider(ui_, 1103, { x, y0 + 112.0f, w, 34.0f }, ui::t(ui::kReverbLabel),
+                       percent(reverb_).c_str(), reverb, 0.0f, 70.0f)) {
+        reverb_ = reverb / 100.0f;
+        mixer_.setReverbMix(reverb_);
+    }
+
+    const Rectangle pedal{ x, y0 + 170.0f, 126.0f, 36.0f };
+    if (widget::button(ui_, 1104, pedal, ui::t(ui::kPedalWord), false, true, sustainUser_))
+        input_.setSustainManual(!input_.sustainManual());
+    fonts_.drawSmall(ui::t(ui::kPedalLabel), x + 142.0f, y0 + 176.0f, theme::kMutedDim);
+    fonts_.drawSmall(sustainUser_ ? ui::t(ui::kOn) : ui::t(ui::kOff), x + 142.0f,
+                     y0 + 193.0f, sustainUser_ ? theme::kGoldLight : theme::kMuted);
+
+    fonts_.drawSmall(ui::t(ui::kFxLabel), x, y0 + 200.0f, theme::kMutedDim);
+    {
+        const std::vector<std::string> items{ ui::t(ui::kFxOff), ui::t(ui::kFxLow),
+                                              ui::t(ui::kFxStandard), ui::t(ui::kFxHigh) };
+        int idx = fxLevel_;
+        if (widget::dropdown(ui_, 1105, { x, y0 + 218.0f, w, 34.0f }, items, idx,
+                             dropdownOpen_, dropdownId_)) {
+            fxLevel_ = idx;
+            applyFxSettings();
+        }
+    }
+    if (widget::checkbox(ui_, { x, y0 + 266.0f, w, 22.0f },
+                         ui::t(ui::kFxReducedMotion), fxReducedMotion_)) {
+        fxReducedMotion_ = !fxReducedMotion_;
+        applyFxSettings();
+    }
+}
+
 void App::drawKeyboardSection() {
+    drawFxStage();
     // 琴盖提示条：漆面底板 + 下沿一道细金线
     const Rectangle& rail = layout_.rail;
     widget::softShadow(rail, 0.25f, 3.0f, 34);
@@ -970,6 +1229,7 @@ void App::drawKeyboardSection() {
                          Color{ 120, 134, 156, 255 });
     }
 
+    pianoView_.setShowKeyHints(showKeyHints_);
     pianoView_.draw(mixer_, input_, fonts_);
 
     // 底部信息行
@@ -998,6 +1258,93 @@ void App::drawKeyboardSection() {
 }
 
 void App::drawTransportRow() {
+    const Rectangle& r = layout_.transport;
+    float x = r.x;
+    const float gap = 8.0f;
+    const float by = r.y + 12.0f;
+    const float bh = 48.0f;
+
+    const Rectangle rec{ x, by, 126.0f, bh };
+    if (widget::button(ui_, 2101, rec, recording_ ? ui::t(ui::kRecordStop) : ui::t(ui::kRecordStart),
+                       !recording_, true, recording_)) {
+        if (recording_) stopRecording(); else startRecording();
+    }
+    x += rec.width + gap;
+    if (widget::button(ui_, 2102, { x, by, 100.0f, bh }, ui::t(ui::kPlayback), false,
+                       recorder_.hasNotes() && !recording_ && !playingRecording_)) startPlayback();
+    x += 100.0f + gap;
+    if (widget::button(ui_, 2103, { x, by, 90.0f, bh }, ui::t(ui::kStop), false,
+                       recording_ || playingRecording_ || songPlaying_)) {
+        if (recording_) stopRecording();
+        if (playingRecording_) stopPlayback();
+        if (songPlaying_) stopSongPlayback();
+    }
+    x += 90.0f + gap;
+    if (widget::button(ui_, 2104, { x, by, 118.0f, bh }, ui::t(ui::kExportMidi), false,
+                       recorder_.hasNotes() && !recording_)) exportRecordingMidi();
+    x += 118.0f + 16.0f;
+
+    DrawLineEx({ x - 8.0f, by + 4.0f }, { x - 8.0f, by + bh - 4.0f }, 1.0f,
+               Color{ 255, 255, 255, 20 });
+    if (widget::button(ui_, 2105, { x, by, 110.0f, bh }, ui::t(ui::kPlaySong), true,
+                       !songs_.empty() && !songPlaying_)) startSongPlayback();
+    x += 110.0f + gap;
+    if (widget::button(ui_, 2106, { x, by, 98.0f, bh }, ui::t(ui::kStopSong), false,
+                       songPlaying_)) stopSongPlayback();
+    x += 98.0f + gap;
+
+    const std::vector<std::string> modes{ ui::t(ui::kModeFull), ui::t(ui::kModeAccomp),
+                                          ui::t(ui::kModeGuide) };
+    int mode = practiceMode_;
+    if (widget::dropdown(ui_, 2107, { x, by, 130.0f, bh }, modes, mode,
+                         dropdownOpen_, dropdownId_)) {
+        practiceMode_ = mode;
+        applyPracticeMode();
+        if (mode == 0) judge_.reset();
+    }
+    x += 130.0f + 14.0f;
+
+    const Rectangle metro{ x, by, 112.0f, bh };
+    if (widget::button(ui_, 2108, metro, metronomeOn_ ? ui::t(ui::kMetronomeOff) : ui::t(ui::kMetronome),
+                       false, true, metronomeOn_)) {
+        metronomeOn_ = !metronomeOn_;
+        metronome_.setEnabled(metronomeOn_ || practiceMode_ == 2);
+    }
+    x += metro.width + gap;
+    float bpm = bpmF_;
+    if (widget::slider(ui_, 2109, { x, by, 170.0f, bh }, ui::t(ui::kBpm),
+                       std::to_string(static_cast<int>(std::lround(bpmF_))).c_str(), bpm,
+                       40.0f, 200.0f)) {
+        bpmF_ = bpm;
+        metronome_.setBpm(static_cast<int>(std::lround(bpmF_)));
+    }
+
+    const Rectangle wave{ r.x + r.width - 352.0f, r.y + 8.0f, 332.0f, 64.0f };
+    widget::panel(wave, Color{ 11, 21, 34, 220 }, Color{ 42, 59, 79, 220 }, 0.12f);
+    const float peak = std::clamp(mixer_.peakLevel(), 0.02f, 1.0f);
+    for (int i = 0; i < 64; ++i) {
+        const std::size_t sample = scope_.empty() ? 0 :
+            std::min(scope_.size() - 1, static_cast<std::size_t>(i * scope_.size() / 64));
+        const float level = scope_.empty() ? peak : std::clamp(scope_[sample], 0.0f, 1.0f);
+        const float idleWave = std::fabs(std::sin(static_cast<float>(i) * 0.57f)) * 0.16f +
+                               std::fabs(std::sin(static_cast<float>(i) * 0.19f + 1.4f)) * 0.08f;
+        const float h = 5.0f + std::max(level * 34.0f, idleWave * 24.0f);
+        const float xx = wave.x + 12.0f + static_cast<float>(i) * (wave.width - 24.0f) / 63.0f;
+        DrawLineEx({ xx, wave.y + wave.height * 0.5f - h * 0.5f },
+                   { xx, wave.y + wave.height * 0.5f + h * 0.5f }, 1.3f,
+                   Color{ 182, 211, 235, static_cast<unsigned char>(90 + level * 150.0f) });
+    }
+    DrawRectangleRounded({ r.x, r.y + r.height - 5.0f, r.width, 3.0f }, 1.0f, 4,
+                          Color{ 32, 45, 61, 255 });
+    const float progress = recording_ ? std::fmod(static_cast<double>(mixer_.currentFrame()) /
+                                                   std::max(1.0, sampleRate_), 30.0) / 30.0
+                                      : (playingRecording_ ? recordedPlayer_.progress()
+                                                            : (songPlaying_ ? static_cast<float>(player_.progress()) : 0.0f));
+    DrawRectangleRounded({ r.x, r.y + r.height - 5.0f, r.width * std::clamp(progress, 0.0f, 1.0f), 3.0f },
+                         1.0f, 4, theme::kGold);
+}
+
+void App::drawTransportLegacy() {
     const Rectangle& r = layout_.transport;
     float x = r.x;
 
@@ -1073,6 +1420,83 @@ void App::drawTransportRow() {
 }
 
 void App::drawSongPanel() {
+    const Rectangle& r = layout_.song;
+    widget::softShadow(r, 0.08f, 5.0f, 44);
+    widget::panel(r, Color{ 11, 22, 35, 248 }, theme::kLine, 0.08f);
+
+    const float navW = 132.0f;
+    DrawRectangleRounded({ r.x, r.y, navW, r.height }, 0.08f, 8, Color{ 10, 19, 31, 190 });
+    const char* tabs[] = { "乐谱跟练", "钢琴卷帘", "练习统计" };
+    for (int i = 0; i < 3; ++i) {
+        const Rectangle tab{ r.x + 10.0f, r.y + 16.0f + static_cast<float>(i) * 48.0f,
+                             navW - 20.0f, 38.0f };
+        if (widget::button(ui_, 2200 + i, tab, tabs[i], i == scoreTab_, true, i == scoreTab_))
+            scoreTab_ = i;
+    }
+    fonts_.drawSmall("跟练模式", r.x + 20.0f, r.y + r.height - 27.0f, theme::kMuted);
+
+    const float x = r.x + navW + 18.0f;
+    const float w = r.width - navW - 30.0f;
+    const std::string title = songs_.empty() ? std::string("跟练谱面")
+                                             : songs_[static_cast<std::size_t>(songIndex_)].title;
+    fonts_.drawBody(title.c_str(), x, r.y + 12.0f, theme::kInk);
+    const std::string meta = songs_.empty() ? std::string("选择曲目开始练习")
+                                            : (std::to_string(songs_[static_cast<std::size_t>(songIndex_)].bpm) + " BPM");
+    fonts_.drawSmall(meta.c_str(), x, r.y + 34.0f, theme::kMuted);
+
+    const float staffX = x + 4.0f;
+    const float staffY = r.y + 64.0f;
+    const float staffW = w - 8.0f;
+    const float lineGap = 9.0f;
+    for (int staff = 0; staff < 2; ++staff) {
+        const float sy = staffY + static_cast<float>(staff) * 55.0f;
+        for (int line = 0; line < 5; ++line)
+            DrawLineEx({ staffX, sy + line * lineGap },
+                       { staffX + staffW, sy + line * lineGap }, 1.0f,
+                       Color{ 126, 143, 163, 150 });
+        DrawLineEx({ staffX + 4.0f, sy - 4.0f }, { staffX + 4.0f, sy + 4.0f * lineGap + 4.0f },
+                   1.0f, Color{ 174, 188, 204, 180 });
+    }
+    fonts_.drawTitle("G", staffX + 8.0f, staffY - 3.0f, Color{ 233, 237, 244, 225 });
+    fonts_.drawTitle("F", staffX + 8.0f, staffY + 52.0f, Color{ 233, 237, 244, 190 });
+
+    if (!songs_.empty()) {
+        const Song& song = songs_[static_cast<std::size_t>(songIndex_)];
+        const std::uint64_t duration = std::max<std::uint64_t>(1, song.durationTicks());
+        int drawn = 0;
+        for (const auto& event : song.events) {
+            if (event.track != kTrackMelody || drawn >= 32) continue;
+            const float nx = staffX + 46.0f + static_cast<float>(event.tick) /
+                             static_cast<float>(duration) * (staffW - 60.0f);
+            const int pitch = std::clamp(static_cast<int>(event.note), 48, 84);
+            const float ny = staffY + 4.0f * lineGap - (pitch - 60) * 1.7f;
+            DrawEllipse(static_cast<int>(nx), static_cast<int>(ny), 5.5f, 3.8f,
+                        event.velocity > 100 ? theme::kGoldLight : theme::kInk);
+            DrawLineEx({ nx + 4.0f, ny }, { nx + 4.0f, ny - 22.0f }, 1.3f, theme::kInk);
+            if (event.duration > 360)
+                DrawLineEx({ nx + 4.0f, ny - 22.0f }, { nx + 16.0f, ny - 22.0f }, 1.2f, theme::kInk);
+            ++drawn;
+        }
+    }
+
+    if (songPlaying_) {
+        const float px = staffX + std::clamp(static_cast<float>(player_.progress()), 0.0f, 1.0f) * staffW;
+        DrawLineEx({ px, staffY - 7.0f }, { px, staffY + 102.0f }, 2.0f,
+                    Color{ 246, 210, 150, 210 });
+        DrawCircleGradient({ px, staffY - 7.0f }, 8.0f, Color{ 246, 210, 150, 100 },
+                           Color{ 246, 210, 150, 0 });
+    }
+
+    const float statY = r.y + r.height - 28.0f;
+    fonts_.drawSmall(ui::t(ui::kJudgeTitle), x, statY, theme::kMutedDim);
+    const std::string stats = std::string(ui::t(ui::kPerfect)) + " " + std::to_string(judge_.perfect()) +
+        "    " + ui::t(ui::kGood) + " " + std::to_string(judge_.good()) +
+        "    " + ui::t(ui::kMiss) + " " + std::to_string(judge_.miss()) +
+        "    " + ui::t(ui::kAccuracy) + " " + std::to_string(static_cast<int>(std::lround(judge_.accuracy() * 100.0f))) + "%";
+    fonts_.drawSmall(stats.c_str(), x + 84.0f, statY, theme::kGoldLight);
+}
+
+void App::drawSongPanelLegacy() {
     const Rectangle& r = layout_.song;
     const bool compact = r.width < 1200.0f;
     widget::softShadow(r, 0.06f, 5.0f, 44);
@@ -1355,6 +1779,16 @@ void App::drawSongPanel() {
 
 void App::drawGuide() {
     const Rectangle& r = layout_.guide;
+    if (r.height < 60.0f) {
+        widget::panel(r, Color{ 12, 22, 35, 220 }, Color{ 42, 59, 79, 220 }, 0.12f);
+        fonts_.drawSmall("?", r.x + 18.0f, r.y + 10.0f, theme::kGoldLight);
+        fonts_.drawSmall("选择曲目后点击播放曲目，或开启跟练判定开始练习。",
+                         r.x + 44.0f, r.y + 10.0f, theme::kMuted);
+        const char* shortcut = "F1 键位提示   空格 延音   R 录制   M 节拍器   ← → 切换曲目";
+        const float sw = fonts_.smallWidth(shortcut);
+        fonts_.drawSmall(shortcut, r.x + r.width - sw - 18.0f, r.y + 10.0f, theme::kMutedDim);
+        return;
+    }
     const float gap = 14.0f;
     const float cw = (r.width - gap * 2.0f) / 3.0f;
 
@@ -1576,7 +2010,7 @@ void App::exportRecordingMidi() {
     const std::vector<std::uint8_t> bytes =
         writeRecordingMidi(recorder_.events(), sampleRate_, recorder_.durationFrames(), opts);
 
-    const std::filesystem::path path = dir / timestampName("Grand_Studio", ".mid");
+    const std::filesystem::path path = uniqueExportPath(dir, timestampName("Grand_Studio", ".mid"));
     std::string err;
     if (saveMidiFile(path, bytes, &err)) {
         setStatus(ui::t(ui::kToastExported));
@@ -1601,7 +2035,7 @@ void App::exportSongMidi() {
     opts.ppq = s.ppq;
     const std::vector<std::uint8_t> bytes = writeSongMidi(s, opts);
 
-    const std::filesystem::path path = dir / timestampName("Song", ".mid");
+    const std::filesystem::path path = uniqueExportPath(dir, timestampName("Song", ".mid"));
     std::string err;
     if (saveMidiFile(path, bytes, &err)) {
         toast(std::string(ui::t(ui::kToastExported)) + " · " + fs::path(path).filename().string());

@@ -121,7 +121,9 @@ void FontBook::collectCodepoints(const std::string& utf8, std::vector<int>& out)
     for (;;) {
         const int cp = GetCodepointNext(p, &size);
         if (cp == 0 || size <= 0) break;
-        out.push_back(cp);
+        // 控制字符（尤其是文案里的换行）不需要进入字体图集，也不应被
+        // 统计为“字体缺少的码点”。真正绘制时换行由调用方拆分处理。
+        if (cp >= 0x20) out.push_back(cp);
         p += size;
     }
 }

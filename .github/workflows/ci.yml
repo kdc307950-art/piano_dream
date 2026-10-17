@@ -15,6 +15,17 @@ jobs:
       - name: Build and selftest
         shell: pwsh
         run: .\build.ps1 -SelfTest
+      - name: Install NSIS
+        shell: pwsh
+        run: choco install nsis --version=3.13 --no-progress -y
+      - name: Build NSIS installer
+        shell: pwsh
+        run: .\build.ps1 -Installer
+      - name: Upload NSIS installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: GrandStudioPiano-windows-installer
+          path: build/*-setup.exe
       - name: Check generated glyphs
         shell: pwsh
         run: python tools/generate_glyphs.py --check

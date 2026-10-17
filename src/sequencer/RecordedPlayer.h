@@ -66,9 +66,12 @@ public:
                                  std::uint64_t blockStartFrame, std::uint32_t maxFrames) {
         auto* self = static_cast<RecordedPlayer*>(user);
         if (!self) return maxFrames;
-        if (!self->playing_.load(std::memory_order_acquire)) return maxFrames;
-
+        // 先登记 busy_ 再检查 playing_，避免 UI 在线程切换窗口中修改 events_。
         self->busy_.store(true, std::memory_order_release);
+        if (!self->playing_.load(std::memory_order_acquire)) {
+            self->busy_.store(false, std::memory_order_release);
+            return maxFrames;
+        }
         while (self->cursor_ < self->events_.size()) {
             const RecordedEvent& e = self->events_[self->cursor_];
             const std::uint64_t when = self->anchorFrame_ + e.frame;
@@ -112,10 +115,8 @@ public:
 private:
     void waitForAudioIdle() {
         playing_.store(false, std::memory_order_release);
-        for (int i = 0; i < 1000; ++i) {
-            if (!busy_.load(std::memory_order_acquire)) return;
+        while (busy_.load(std::memory_order_acquire))
             std::this_thread::sleep_for(std::chrono::microseconds(200));
-        }
     }
 
     std::vector<RecordedEvent> events_;

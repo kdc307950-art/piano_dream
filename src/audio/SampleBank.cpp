@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <exception>
 #include <filesystem>
 
@@ -40,6 +41,16 @@ int anchorFromStem(const std::string& stem) {
         if (v >= kMidiLow && v <= kMidiHigh) return v;
     }
     return -1;
+}
+
+float layerVelocityFromStem(const std::string& stem) {
+    for (std::size_t i = 0; i + 1 < stem.size(); ++i) {
+        if (std::tolower(static_cast<unsigned char>(stem[i])) != 'v') continue;
+        const char layer = static_cast<char>(std::tolower(static_cast<unsigned char>(stem[i + 1])));
+        if (layer == 'l') return 0.28f;
+        if (layer == 'h') return 0.86f;
+    }
+    return 0.5f;
 }
 
 } // namespace
@@ -85,6 +96,7 @@ int SampleBank::loadDirectory(const std::string& dir, std::string* log) {
             buf->channels   = static_cast<int>(decoder.outputChannels);
             buf->sampleRate = static_cast<double>(decoder.outputSampleRate);
             buf->anchorNote = anchor;
+            buf->layerVelocity = layerVelocityFromStem(path.stem().string());
             buf->path       = path.string();
 
             ma_uint64 total = 0;
@@ -117,7 +129,11 @@ int SampleBank::loadDirectory(const std::string& dir, std::string* log) {
         anchors_.clear();
         for (const auto& b : owned_) sorted_.push_back(b.get());
         std::sort(sorted_.begin(), sorted_.end(),
-                  [](const SampleBuffer* a, const SampleBuffer* b) { return a->anchorNote < b->anchorNote; });
+                  [](const SampleBuffer* a, const SampleBuffer* b) {
+                      if (a->anchorNote != b->anchorNote) return a->anchorNote < b->anchorNote;
+                      if (a->layerVelocity != b->layerVelocity) return a->layerVelocity < b->layerVelocity;
+                      return a->path < b->path;
+                  });
         for (const auto* b : sorted_) anchors_.push_back(b->anchorNote);
         return loaded;
     } catch (const std::exception& e) {
@@ -126,12 +142,18 @@ int SampleBank::loadDirectory(const std::string& dir, std::string* log) {
     }
 }
 
-const SampleBuffer* SampleBank::nearest(int note, int maxDistance) const {
+const SampleBuffer* SampleBank::nearest(int note, int maxDistance, float velocity) const {
     const SampleBuffer* best = nullptr;
     int bestDist = maxDistance + 1;
+    float bestLayerDist = 1e9f;
     for (const auto* b : sorted_) {
         const int d = std::abs(b->anchorNote - note);
-        if (d < bestDist) { bestDist = d; best = b; }
+        const float layerDist = std::fabs(b->layerVelocity - velocity);
+        if (d < bestDist || (d == bestDist && layerDist < bestLayerDist)) {
+            bestDist = d;
+            bestLayerDist = layerDist;
+            best = b;
+        }
     }
     return bestDist <= maxDistance ? best : nullptr;
 }

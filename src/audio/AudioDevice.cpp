@@ -30,25 +30,32 @@ std::uint8_t velocityToMidi(float v) {
 void piano_audio_callback(ma_device* device, void* output, const void* input,
                           std::uint32_t frameCount) {
     (void)input;
-    if (!device) return;
+    // miniaudio normally supplies a valid output buffer, but clearing it on an
+    // early exit keeps a partially initialised device silent instead of sending
+    // uninitialised samples to the driver.
+    if (!device) {
+        if (output) std::fill(static_cast<float*>(output),
+                              static_cast<float*>(output) +
+                                  static_cast<std::size_t>(frameCount) * 2, 0.0f);
+        return;
+    }
     auto* self = static_cast<AudioDevice*>(device->pUserData);
-    if (!self || !self->mixer_ || frameCount == 0) return;
+    if (!self || !self->mixer_ || !output || frameCount == 0) {
+        if (output) std::fill(static_cast<float*>(output),
+                              static_cast<float*>(output) +
+                                  static_cast<std::size_t>(frameCount) * 2, 0.0f);
+        return;
+    }
 
     float* out = static_cast<float*>(output);
     Mixer& mixer = *self->mixer_;
 
-    // 0) 静音：仍然渲染（推进时间轴、维持声部状态），只是不写输出。
-    if (self->muted_.load(std::memory_order_relaxed)) {
-        mixer.render(out, frameCount);
-        std::fill(out, out + static_cast<std::size_t>(frameCount) * 2, 0.0f);
-        return;
-    }
-
-    // 1) 主线程投递的事件：在本块起点立即生效
+    // 1) 主线程投递的事件：在本块起点立即生效。即使设备被静音也必须
+    // 消费这些消息，否则恢复声音时会把旧的 NoteOn/NoteOff 集中执行。
     NoteMsg msg;
     while (self->queue_.pop(msg)) self->applyMessage(msg, mixer);
 
-    // 2) 按采样点分段渲染
+    // 2) 按采样点分段渲染。静音只影响最终输出，不影响调度和音频时间轴。
     const std::uint64_t blockStart = mixer.currentFrame();
     std::uint32_t done = 0;
     while (done < frameCount) {
@@ -61,6 +68,9 @@ void piano_audio_callback(ma_device* device, void* output, const void* input,
         mixer.render(out + static_cast<std::size_t>(done) * 2, chunk);
         done += chunk;
     }
+
+    if (self->muted_.load(std::memory_order_relaxed))
+        std::fill(out, out + static_cast<std::size_t>(frameCount) * 2, 0.0f);
 }
 
 void AudioDevice::applyMessage(const NoteMsg& msg, Mixer& mixer) {

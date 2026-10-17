@@ -71,10 +71,15 @@ private:
     void drawTopbar();
     void drawHero();
     void drawConsole();
+    void drawLibraryPane();
+    void drawHeroPanel();
     void drawControlsRow();
+    void drawControlsLegacy();
     void drawKeyboardSection();
     void drawTransportRow();
+    void drawTransportLegacy();
     void drawSongPanel();
+    void drawSongPanelLegacy();
     void drawGuide();
     void drawFooter();
     void drawOverlays();
@@ -138,6 +143,10 @@ private:
     Recorder     recorder_;
     PracticeJudge judge_;
     FontBook     fonts_;
+    Texture2D    heroTexture_{};
+    bool         heroTextureReady_ = false;
+    Texture2D    coverSheet_{};
+    bool         coverSheetReady_ = false;
     UiLayout     layout_;
     UiContext    ui_;
 
@@ -150,8 +159,10 @@ private:
     int   songIndex_ = 0;
     int   difficultyFilter_ = 0;      // 0=全部 1=入门 2=进阶
     int   practiceMode_ = 0;          // 0=完整播放 1=仅伴奏跟练 2=节拍引导
+    int   scoreTab_ = 0;              // 0=乐谱跟练 1=钢琴卷帘 2=练习统计
     int   engineMode_ = 0;            // 0=自动 1=采样 2=合成
     bool  showFavoritesOnly_ = false;
+    bool  showKeyHints_ = false;
 
     float volume_ = 0.75f;
     float reverb_ = 0.28f;

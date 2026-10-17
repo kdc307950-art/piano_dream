@@ -8,7 +8,8 @@
 //                                   （默认目录 exports/fx-demo/）
 //
 #include <cstdio>
-#include <cstdlib>
+#include <charconv>
+#include <string_view>
 #include <string>
 
 #include "App.h"
@@ -17,6 +18,41 @@
 namespace piano {
 int runSelfTest(bool verbose);
 }
+
+namespace {
+
+void printUsage(const char* exe) {
+    std::printf(
+        "Grand Studio Piano 1.0\n"
+        "用法：%s [选项]\n\n"
+        "  --selftest, -t             运行离线自测\n"
+        "  --screenshot [文件]        渲染后截图并退出\n"
+        "  --capture-play             截图时自动播放第一首曲目\n"
+        "  --frames N                 截图帧数（正整数）\n"
+        "  --size WxH                 设置窗口尺寸\n"
+        "  --width N / --height N     设置窗口宽高\n"
+        "  --fx-demo [目录]            输出特效演示截图\n"
+        "  --help, -h                 显示帮助\n"
+        "  --version                  显示版本\n",
+        exe ? exe : "piano");
+}
+
+bool parseInt(std::string_view text, int& value) {
+    if (text.empty()) return false;
+    int parsed = 0;
+    const auto result = std::from_chars(text.data(), text.data() + text.size(), parsed);
+    if (result.ec != std::errc{} || result.ptr != text.data() + text.size()) return false;
+    value = parsed;
+    return true;
+}
+
+bool nextValue(int argc, char** argv, int& index, std::string& value) {
+    if (index + 1 >= argc || !argv[index + 1] || argv[index + 1][0] == '-') return false;
+    value = argv[++index];
+    return !value.empty();
+}
+
+} // namespace
 
 int main(int argc, char** argv) {
     // 让 Windows 控制台按 UTF-8 解释我们的输出，否则中文会变成乱码。
@@ -34,35 +70,69 @@ int main(int argc, char** argv) {
     std::string fxDemoDir = "exports/fx-demo";
 
     for (int i = 1; i < argc; ++i) {
+        if (!argv[i]) continue;
         const std::string a = argv[i];
         if (a == "--selftest" || a == "-t") {
             selfTest = true;
+        } else if (a == "--help" || a == "-h") {
+            printUsage(argv[0]);
+            return 0;
+        } else if (a == "--version") {
+            std::printf("Grand Studio Piano 1.0\n");
+            return 0;
         } else if (a == "--screenshot") {
             capture = true;
-            if (i + 1 < argc && argv[i + 1][0] != '-') capturePath = argv[++i];
+            if (i + 1 < argc && argv[i + 1] && argv[i + 1][0] != '-') {
+                capturePath = argv[++i];
+                if (capturePath.empty()) { printUsage(argv[0]); return 2; }
+            }
         } else if (a.rfind("--screenshot=", 0) == 0) {
             capture = true;
             capturePath = a.substr(std::string("--screenshot=").size());
+            if (capturePath.empty()) { printUsage(argv[0]); return 2; }
         } else if (a == "--fx-demo") {
             fxDemo = true;
             if (i + 1 < argc && argv[i + 1][0] != '-') fxDemoDir = argv[++i];
         } else if (a.rfind("--fx-demo=", 0) == 0) {
             fxDemo = true;
             fxDemoDir = a.substr(std::string("--fx-demo=").size());
+            if (fxDemoDir.empty()) { printUsage(argv[0]); return 2; }
         } else if (a == "--capture-play") {
             capturePlay = true;
-        } else if (a == "--frames" && i + 1 < argc) {
-            captureFrames = std::atoi(argv[++i]);
-        } else if (a == "--size" && i + 1 < argc) {
-            const std::string size = argv[++i];
+        } else if (a == "--frames") {
+            std::string value;
+            if (!nextValue(argc, argv, i, value) || !parseInt(value, captureFrames) || captureFrames <= 0) {
+                std::fprintf(stderr, "--frames 需要正整数。\n");
+                return 2;
+            }
+        } else if (a == "--size") {
+            std::string size;
+            if (!nextValue(argc, argv, i, size)) { printUsage(argv[0]); return 2; }
             const auto separator = size.find('x');
-            if (separator == std::string::npos) return 2;
-            windowWidth = std::atoi(size.substr(0, separator).c_str());
-            windowHeight = std::atoi(size.substr(separator + 1).c_str());
-        } else if (a == "--width" && i + 1 < argc) {
-            windowWidth = std::atoi(argv[++i]);
-        } else if (a == "--height" && i + 1 < argc) {
-            windowHeight = std::atoi(argv[++i]);
+            int parsedWidth = 0;
+            int parsedHeight = 0;
+            if (separator == std::string::npos || size.find('x', separator + 1) != std::string::npos ||
+                !parseInt(size.substr(0, separator), parsedWidth) ||
+                !parseInt(size.substr(separator + 1), parsedHeight) ||
+                parsedWidth <= 0 || parsedHeight <= 0) {
+                std::fprintf(stderr, "--size 需要形如 1520x1000 的正整数尺寸。\n");
+                return 2;
+            }
+            windowWidth = parsedWidth;
+            windowHeight = parsedHeight;
+        } else if (a == "--width" || a == "--height") {
+            std::string value;
+            int parsed = 0;
+            if (!nextValue(argc, argv, i, value) || !parseInt(value, parsed) || parsed <= 0) {
+                std::fprintf(stderr, "%s 需要正整数。\n", a.c_str());
+                return 2;
+            }
+            if (a == "--width") windowWidth = parsed;
+            else windowHeight = parsed;
+        } else {
+            std::fprintf(stderr, "未知参数：%s\n", a.c_str());
+            printUsage(argv[0]);
+            return 2;
         }
     }
 

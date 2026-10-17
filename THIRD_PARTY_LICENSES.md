@@ -2,6 +2,14 @@
 
 本项目 vendored（随源码分发）的第三方组件及其许可证如下。
 
+## FreePats Upright Piano KW samples
+
+- 路径：`assets/samples/*.flac`
+- 来源：https://github.com/freepats/upright-piano-KW
+- 内容：Kawai 立式钢琴真实录音锚点
+- 许可证：CC0 1.0 Universal
+- 来源记录与许可证副本：`assets/samples/FREEPATS_SOURCE.json`、`FREEPATS_CC0_LICENSE.txt`、`FREEPATS_README.md`
+
 ## raylib
 
 - 路径：`third_party/raylib/include`（头文件与预编译库）、`third_party/raylib-src`（本地源码，用于离线可复现构建）

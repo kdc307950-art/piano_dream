@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cctype>
 #include <cstddef>
+#include <cerrno>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
@@ -80,9 +82,21 @@ std::string toHex64(std::uint64_t v) {
 
 bool parseInt(const std::string& s, long long& out) {
     if (s.empty()) return false;
+    errno = 0;
     char* end = nullptr;
     const long long v = std::strtoll(s.c_str(), &end, 10);
-    if (!end || *end != '\0') return false;
+    if (errno == ERANGE || !end || *end != '\0') return false;
+    out = v;
+    return true;
+}
+
+bool parseDuration(const std::string& s, double& out) {
+    if (s.empty()) return false;
+    errno = 0;
+    char* end = nullptr;
+    const double v = std::strtod(s.c_str(), &end);
+    if (errno == ERANGE || !end || *end != '\0' || !std::isfinite(v) || v < 0.0)
+        return false;
     out = v;
     return true;
 }
@@ -249,6 +263,11 @@ bool SongLibrary::load(const std::filesystem::path& dir) {
         if (!line.empty() && line.back() == '\r') line.pop_back();
         if (line.empty()) continue;
 
+        if (entries_.size() >= static_cast<std::size_t>(kMaxSongs)) {
+            ++corruptLines_;
+            continue;
+        }
+
         if (!splitLine(line, f)) { ++corruptLines_; continue; }
 
         Entry e;
@@ -257,15 +276,18 @@ bool SongLibrary::load(const std::filesystem::path& dir) {
         e.title = f[1];
         e.source = f[2];
         if (!validId(e.id) || !parseU64Hex(f[3], e.hash)) { ++corruptLines_; continue; }
-        if (!parseInt(f[4], v)) { ++corruptLines_; continue; }
+        if (!parseInt(f[4], v) || v < 1 || v > 999) { ++corruptLines_; continue; }
         e.bpm = static_cast<int>(v);
-        e.durationSeconds = std::strtod(f[5].c_str(), nullptr);
-        if (!parseInt(f[6], v)) { ++corruptLines_; continue; }
+        if (!parseDuration(f[5], e.durationSeconds)) { ++corruptLines_; continue; }
+        if (!parseInt(f[6], v) || v < 0 || v > static_cast<long long>(kMaxNotesPerSong)) {
+            ++corruptLines_; continue;
+        }
         e.noteCount = static_cast<int>(v);
-        if (!parseInt(f[7], v)) { ++corruptLines_; continue; }
+        if (!parseInt(f[7], v) || v < -1 || v > 1000000) { ++corruptLines_; continue; }
         e.melodyTrack = static_cast<int>(v);
         if (!parseInt(f[8], v)) { ++corruptLines_; continue; }
         e.importTimeUnix = v;
+        if (f[9] != "0" && f[9] != "1") { ++corruptLines_; continue; }
         e.favorite = (f[9] == "1");
         e.fileBytes = fs::file_size(midiPathFor(e.id), ec);
         if (ec) e.fileBytes = 0;
@@ -327,10 +349,15 @@ bool SongLibrary::saveIndex() {
 // ---------------------------------------------------------------------------
 
 bool SongLibrary::readEntryBytes(const std::string& id, std::vector<std::uint8_t>& out) const {
-    std::ifstream in(midiPathFor(id), std::ios::binary);
+    std::error_code ec;
+    const std::filesystem::path path = midiPathFor(id);
+    const std::uintmax_t size = std::filesystem::file_size(path, ec);
+    if (ec || size > kMaxFileBytes) return false;
+    std::ifstream in(path, std::ios::binary);
     if (!in) return false;
+    out.reserve(static_cast<std::size_t>(size));
     out.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
-    return true;
+    return out.size() == size;
 }
 
 SongLibrary::AddResult SongLibrary::add(const std::filesystem::path& srcFile,
@@ -353,6 +380,9 @@ SongLibrary::AddResult SongLibrary::add(const std::filesystem::path& srcFile,
         if (!in) { res.code = AddResult::Code::IoError; return res; }
         bytes.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
     }
+    // file_size() and the actual read can disagree when the source changes
+    // concurrently. Re-check the bound before handing bytes to the parser.
+    if (bytes.size() > kMaxFileBytes) { res.code = AddResult::Code::TooLarge; return res; }
 
     MidiParseResult parsed = parseMidi(bytes.data(), bytes.size());
     if (!parsed.ok) {
@@ -450,8 +480,13 @@ bool SongLibrary::rename(const std::string& id, const std::string& newTitle) {
     if (!e) return false;
     const std::string t = sanitizeTitle(newTitle);
     if (t.empty()) return false;
+    const std::string oldTitle = e->title;
     e->title = t;
-    return saveIndex();
+    if (saveIndex()) return true;
+    // Keep the in-memory view consistent with the on-disk index when a write
+    // fails (read-only media, full disk, interrupted rename, ...).
+    e->title = oldTitle;
+    return false;
 }
 
 bool SongLibrary::remove(const std::string& id) {
@@ -459,10 +494,27 @@ bool SongLibrary::remove(const std::string& id) {
     for (std::size_t i = 0; i < entries_.size(); ++i) {
         if (entries_[i].id != id) continue;
         std::error_code ec;
-        std::filesystem::remove(midiPathFor(id), ec);
-        totalBytes_ -= entries_[i].fileBytes;
+        const Entry old = entries_[i];
         entries_.erase(entries_.begin() + static_cast<std::ptrdiff_t>(i));
-        return saveIndex();
+        if (!saveIndex()) {
+            entries_.insert(entries_.begin() + static_cast<std::ptrdiff_t>(i), old);
+            return false;
+        }
+
+        // Delete the payload only after the index has been committed. If the
+        // delete is denied, restore the index so a failed remove never leaves
+        // an entry silently pointing at a missing file.
+        if (!std::filesystem::remove(midiPathFor(id), ec) && ec) {
+            entries_.insert(entries_.begin() + static_cast<std::ptrdiff_t>(i), old);
+            if (!saveIndex()) {
+                // The best available state is still represented by the return
+                // value; callers can reload and inspect the backup index.
+                return false;
+            }
+            return false;
+        }
+        totalBytes_ -= old.fileBytes;
+        return true;
     }
     return false;
 }
@@ -471,8 +523,11 @@ bool SongLibrary::setFavorite(const std::string& id, bool favorite) {
     if (readOnly_) return false;
     for (auto& e : entries_) {
         if (e.id != id) continue;
+        const bool oldFavorite = e.favorite;
         e.favorite = favorite;
-        return saveIndex();
+        if (saveIndex()) return true;
+        e.favorite = oldFavorite;
+        return false;
     }
     return false;
 }

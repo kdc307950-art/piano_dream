@@ -40,56 +40,11 @@ void addAccompaniment(Song& song, const std::vector<int>& notes, std::uint32_t b
 std::vector<Song> builtinSongs() {
     std::vector<Song> songs;
 
-    // ---- 欢乐颂（贝多芬第九交响曲主题）----
-    {
-        Song s;
-        s.id = "ode";
-        s.title = "欢乐颂";
-        s.composer = "L. van Beethoven";
-        s.bpm = 92;
-        s.difficulty = 1;
-        addMelody(s, { 64, 64, 65, 67, 67, 65, 64, 62, 60, 60, 62, 64, 64, 62, 62, 60 },
-                  480, 960, 4);
-        addAccompaniment(s, { 48, 55, 45, 48 }, 1920);
-        s.sortEvents();
-        songs.push_back(std::move(s));
-    }
-
-    // ---- 小星星 ----
-    {
-        Song s;
-        s.id = "twinkle";
-        s.title = "小星星";
-        s.composer = "法国民谣";
-        s.bpm = 104;
-        s.difficulty = 1;
-        addMelody(s, { 60, 60, 67, 67, 69, 69, 67, 65, 65, 64, 64, 62, 62, 60 },
-                  480, 960, 2);
-        addAccompaniment(s, { 48, 55, 53, 48 }, 1920);
-        s.sortEvents();
-        songs.push_back(std::move(s));
-    }
-
-    // ---- 铃儿响叮当 ----
-    {
-        Song s;
-        s.id = "jingle";
-        s.title = "铃儿响叮当";
-        s.composer = "J. Pierpont";
-        s.bpm = 120;
-        s.difficulty = 1;
-        addMelody(s, { 64, 64, 64, 64, 64, 64, 64, 67, 60, 62, 64, 65, 65, 64, 62, 60 },
-                  480, 960, 8);
-        addAccompaniment(s, { 48, 48, 55, 48 }, 1920);
-        s.sortEvents();
-        songs.push_back(std::move(s));
-    }
-
-    // ---- 卡农片段（进阶：含黑键与更密集的音符）----
+    // ---- 卡农（帕赫贝尔主题片段）----
     {
         Song s;
         s.id = "canon";
-        s.title = "卡农 · 片段";
+        s.title = "卡农";
         s.composer = "J. Pachelbel";
         s.bpm = 84;
         s.difficulty = 2;
@@ -97,6 +52,67 @@ std::vector<Song> builtinSongs() {
                        81, 79, 76, 74, 72, 71, 69, 67, 69, 71, 72, 74, 76, 74, 72, 69 },
                   480, 480, 0);
         addAccompaniment(s, { 48, 55, 52, 57, 53, 60, 55, 50 }, 1920);
+        s.sortEvents();
+        songs.push_back(std::move(s));
+    }
+
+    // ---- 致爱丽丝 ----
+    {
+        Song s;
+        s.id = "fur-elise";
+        s.title = "致爱丽丝";
+        s.composer = "L. van Beethoven";
+        s.bpm = 108;
+        s.difficulty = 1;
+        addMelody(s, { 76, 75, 76, 75, 76, 71, 74, 72, 69, 52, 60, 69, 71, 60, 64, 69,
+                       72, 60, 76, 75, 76, 75, 76, 71, 74, 72, 69, 52, 60, 69, 72, 71 },
+                  360, 720, 8);
+        addAccompaniment(s, { 45, 52, 48, 55, 45, 52, 48, 55 }, 1440);
+        s.sortEvents();
+        songs.push_back(std::move(s));
+    }
+
+    // ---- 月光奏鸣曲 ----
+    {
+        Song s;
+        s.id = "moonlight";
+        s.title = "月光奏鸣曲";
+        s.composer = "L. van Beethoven";
+        s.bpm = 72;
+        s.difficulty = 2;
+        addMelody(s, { 57, 60, 64, 60, 57, 60, 64, 60, 57, 60, 65, 60, 55, 59, 64, 59,
+                       57, 60, 64, 60, 57, 60, 65, 60 }, 480, 480, 0);
+        addAccompaniment(s, { 45, 52, 48, 55, 45, 52, 48, 55 }, 1920);
+        s.sortEvents();
+        songs.push_back(std::move(s));
+    }
+
+    // ---- 天空之城 ----
+    {
+        Song s;
+        s.id = "castle-in-sky";
+        s.title = "天空之城";
+        s.composer = "久石让";
+        s.bpm = 96;
+        s.difficulty = 1;
+        addMelody(s, { 72, 74, 76, 79, 81, 79, 76, 74, 72, 74, 76, 79, 84, 81, 79, 76,
+                       72, 74, 76, 79, 81, 79, 76, 74 }, 480, 960, 4);
+        addAccompaniment(s, { 48, 55, 52, 57, 48, 55, 52, 57 }, 1920);
+        s.sortEvents();
+        songs.push_back(std::move(s));
+    }
+
+    // ---- River Flows in You ----
+    {
+        Song s;
+        s.id = "river-flows-in-you";
+        s.title = "River Flows in You";
+        s.composer = "Yiruma";
+        s.bpm = 92;
+        s.difficulty = 1;
+        addMelody(s, { 69, 72, 76, 72, 69, 72, 77, 76, 69, 72, 76, 72, 67, 71, 74, 71,
+                       69, 72, 76, 72, 69, 72, 77, 81 }, 480, 960, 4);
+        addAccompaniment(s, { 45, 52, 48, 55, 45, 52, 48, 55 }, 1920);
         s.sortEvents();
         songs.push_back(std::move(s));
     }

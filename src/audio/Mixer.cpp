@@ -101,7 +101,7 @@ Voice* Mixer::allocateSlot() {
     return nullptr;
 }
 
-Voice* Mixer::pickVictim() {
+Voice* Mixer::pickVictim(bool heldOnly) {
     // 偷声优先级（数值越小越先被偷）：
     //   0  已在释放阶段，且不是用户实时弹奏的
     //   1  已在释放阶段的用户音
@@ -120,7 +120,7 @@ Voice* Mixer::pickVictim() {
     float bestLevel = 1e9f;
 
     for (auto& v : voices_) {
-        if (!v.active) continue;
+        if (!v.active || (heldOnly && v.released)) continue;
         const int   tier  = tierOf(v);
         const float level = v.env.level;
         if (best == nullptr || tier < bestTier || (tier == bestTier && level < bestLevel)) {
@@ -133,7 +133,8 @@ Voice* Mixer::pickVictim() {
 }
 
 void Mixer::stealOne() {
-    Voice* victim = pickVictim();
+    // 复音预算不包含释放尾音，因此必须偷走仍占预算的声部。
+    Voice* victim = pickVictim(true);
     if (!victim) return;
 
     // 关键：必须真正「释放槽位」，而不是把被偷的声部留在快速释放状态。
@@ -177,7 +178,7 @@ Voice* Mixer::startVoice(int midi, float vel, Source source) {
 
     const std::uint64_t frame = frameCounter_.load(std::memory_order_relaxed);
     const bool wantSample = (engineMode_.load(std::memory_order_relaxed) != EngineMode::SynthOnly) && bank_ && !bank_->empty();
-    const SampleBuffer* buf = wantSample ? bank_->nearest(midi, kSampleMaxDistance) : nullptr;
+    const SampleBuffer* buf = wantSample ? bank_->nearest(midi, kSampleMaxDistance, vel) : nullptr;
 
     if (buf) v->startSample(buf, sampleRate_, midi, vel, source, frame);
     else     v->startSynth(wavetables_, sampleRate_, midi, vel, source, frame);

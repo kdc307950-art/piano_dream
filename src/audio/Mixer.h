@@ -143,7 +143,7 @@ private:
     };
 
     Voice* allocateSlot();
-    Voice* pickVictim();
+    Voice* pickVictim(bool heldOnly = false);
     void   stealOne();
     void   flushDeferred();
     Voice* startVoice(int midi, float vel, Source source);

@@ -45,11 +45,12 @@ inline constexpr std::array<KeyBinding, 29> kDefaultBindings = { {
 
 class KeyboardMap {
 public:
-    KeyboardMap() = default;
+    KeyboardMap() { index_.fill(-1); }
 
     /// 整体替换映射表（允许外部配置）。
     void setBindings(const KeyBinding* table, std::size_t count) {
-        bindings_.assign(table, table + count);
+        if (count == 0) bindings_.clear();
+        else bindings_.assign(table, table + count);
         rebuildIndex();
     }
 
@@ -95,12 +96,12 @@ private:
         index_.fill(-1);
         for (std::size_t i = 0; i < bindings_.size(); ++i) {
             const int k = static_cast<unsigned char>(bindings_[i].key);
-            if (k >= 0 && k <= 255) index_[static_cast<std::size_t>(k)] = static_cast<std::int8_t>(i);
+            index_[static_cast<std::size_t>(k)] = static_cast<int>(i);
         }
     }
 
     std::vector<KeyBinding> bindings_;
-    std::array<std::int8_t, 256> index_{};
+    std::array<int, 256> index_{};
     int octaveShift_ = 0;
 };
 

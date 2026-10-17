@@ -58,6 +58,8 @@ struct UiLayout {
     Rectangle console{};
 
     Rectangle header{};
+    Rectangle library{};    // 左侧曲库栏
+    Rectangle heroPanel{};  // 中央品牌舞台
     Rectangle controls{};
     Rectangle rail{};
     Rectangle keys{};
@@ -82,53 +84,49 @@ struct UiLayout {
         w = width < 1100.0f ? 1100.0f : width;
         h = height < 880.0f ? 880.0f : height;
 
-        const float margin = 24.0f;
-        topbar = { margin, 12.0f, w - margin * 2.0f, 44.0f };
-        hero   = { margin, 60.0f, w - margin * 2.0f, 26.0f };
+        // 逻辑画布保持 1520×1000，方便高 DPI 与截图模式复用；布局结构
+        // 按设计稿重排为：顶部品牌栏 → 曲库/舞台/控制三栏 → 键盘 → 运输栏 → 谱面。
+        const float margin = 14.0f;
+        topbar = { margin, 10.0f, w - margin * 2.0f, 58.0f };
+        hero   = { margin, 72.0f, w - margin * 2.0f, 8.0f };
 
-        const float consoleTop    = 96.0f;
-        const float contentH      = std::min(h, 1200.0f);
-        const float consoleBottom = contentH - 112.0f;
+        const float consoleTop    = 84.0f;
+        const float consoleBottom = h - 52.0f;
         console = { margin, consoleTop, w - margin * 2.0f, consoleBottom - consoleTop };
 
-        const float pad = 20.0f;
-        const float cw  = std::min(console.width - pad * 2.0f, 1600.0f);
-        const float x   = console.x + (console.width - cw) * 0.5f;
-        float y = console.y + 14.0f;
+        const float x = console.x;
+        const float cw = console.width;
+        const float topRowH = 356.0f;
+        const float gap = 8.0f;
+        const float leftW = std::clamp(cw * 0.30f, 300.0f, 460.0f);
+        const float rightW = std::clamp(cw * 0.255f, 300.0f, 410.0f);
+        const float middleW = cw - leftW - rightW - gap * 2.0f;
 
-        header   = { x, y, cw, 38.0f }; y += 46.0f;
-        controls = { x, y, cw, 64.0f }; y += 72.0f;
-        rail     = { x, y, cw, 26.0f }; y += 30.0f;
+        library   = { x, consoleTop, leftW, topRowH };
+        heroPanel = { x + leftW + gap, consoleTop, middleW, topRowH };
+        controls  = { heroPanel.x + heroPanel.width + gap, consoleTop, rightW, topRowH };
+        header    = heroPanel;
 
-        const float below = 34.0f + 50.0f + 12.0f + 24.0f + 150.0f; // 为曲目面板预留空间
-        const float avail = console.y + console.height - 14.0f - y - below;
+        float y = consoleTop + topRowH + 8.0f;
+        rail = { x, y, cw, 20.0f };
+        y += 28.0f;
 
-        // 特效舞台带：从剩余垂直空间（扣掉琴键最小高度）中划出，位于键盘上方。
-        // 关闭时 fxStage 为空，下面所有几何与引入本特性前完全一致。
-        if (fxEnabled) {
-            fxStage = { x, y, cw,
-                        std::clamp(avail - 150.0f, theme::fx::kStageMinHeight,
-                                   theme::fx::kStageMaxHeight) };
-            y += fxStage.height + 8.0f;
-        } else {
-            fxStage = Rectangle{};
-        }
+        // 特效在设计稿中表现为舞台底部的金色粒子带，不再额外挤占键盘高度。
+        // 这样键盘、运输栏和谱面在不同窗口尺寸下保持稳定位置。
+        fxStage = fxEnabled ? Rectangle{ x, y - 26.0f, cw, 26.0f } : Rectangle{};
 
-        keyH   = std::clamp(avail - (fxEnabled ? fxStage.height + 8.0f : 0.0f), 150.0f, 300.0f);
+        keyH   = 154.0f;
         blackH = keyH * 0.633f;
         keyW   = std::clamp(cw / 52.0f, 14.0f, 32.0f);
         blackW = keyW * 0.636f;
-
         keys   = { x, y, cw, keyH };  y += keyH + 8.0f;
-        bottom = { x, y, cw, 26.0f }; y += 34.0f;
-        transport = { x, y, cw, 42.0f }; y += 50.0f;
+        bottom = { x, y, cw, 24.0f }; y += 30.0f;
+        transport = { x, y, cw, 88.0f }; y += 96.0f;
         timeline  = { x, y, cw, 4.0f };  y += 12.0f;
-        song      = { x, y, cw, std::clamp(console.y + console.height - 14.0f - y, 150.0f, 220.0f) };
+        song      = { x, y, cw, std::max(150.0f, consoleBottom - y) };
 
-        const float lowerW = cw;
-        const float lowerX = x;
-        guide  = { lowerX, consoleBottom + 10.0f, lowerW, 84.0f };
-        footer = { lowerX, guide.y + guide.height + 2.0f, lowerW, 16.0f };
+        guide  = { x, consoleBottom + 8.0f, cw, 36.0f };
+        footer = { x, guide.y + guide.height + 2.0f, cw, 12.0f };
     }
 };
 

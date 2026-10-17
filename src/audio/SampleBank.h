@@ -7,8 +7,8 @@
 // 播放时按最近的锚点做变调（playbackRate = 2^((note-anchor)/12)），
 // 与 HTML 原版「少量锚点 + 变调补全」的策略一致。
 //
-// 注意：不内置任何采样文件。开源钢琴采样（如 Salamander Grand Piano）
-// 的许可证各不相同，公开发布前请自行确认（见 README「采样与许可」）。
+// 默认资源目录包含 FreePats Kawai Upright Piano 的 CC0 FLAC 锚点采样；
+// 缺少资源时 Mixer 会自动回退到合成音色（见 README「采样与许可」）。
 //
 #include <cstddef>
 #include <cstdint>
@@ -23,6 +23,7 @@ struct SampleBuffer {
     int    channels   = 1;
     double sampleRate = 48000.0;
     int    anchorNote = 60;
+    float  layerVelocity = 0.5f; // 采样层的目标力度（vL≈0.25，vH≈0.85）
     std::string path;
 
     std::size_t frameCount() const { return channels > 0 ? data.size() / static_cast<std::size_t>(channels) : 0; }
@@ -55,7 +56,7 @@ public:
     int loadDirectory(const std::string& dir, std::string* log = nullptr);
 
     /// 返回与 note 距离不超过 maxDistance 的最近锚点采样；没有则返回 nullptr。
-    const SampleBuffer* nearest(int note, int maxDistance) const;
+    const SampleBuffer* nearest(int note, int maxDistance, float velocity = 0.5f) const;
 
     bool empty() const { return sorted_.empty(); }
     std::size_t size() const { return sorted_.size(); }

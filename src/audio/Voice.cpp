@@ -76,6 +76,7 @@ void Voice::startSynth(const WavetableBank& bank, double sampleRate, int midi,
     cutoffNow  = cutoffStartFor(hz, vel);
     cutoffEnd  = cutoffEndFor(hz, vel);
     cutoffCoef = std::pow(0.9995f, 16.0f);      // 每 16 样本迭代一次
+    filterFramesRemaining = 0;
     filter.reset();
     filter.setLowpass(cutoffNow, 0.55f, static_cast<float>(sampleRate));
 
@@ -130,6 +131,7 @@ void Voice::hardReset() noexcept {
     env.hardStop();
     filter.reset();
     hammerFilter.reset();
+    filterFramesRemaining = 0;
     hammerLevel = 0.0f;
     sample = nullptr;
     samplePos = 0.0;
@@ -142,10 +144,14 @@ void Voice::renderAdd(float* out, std::uint32_t frames, float sampleRate) {
     if (kind == Kind::Synth) {
         std::uint32_t i = 0;
         while (i < frames) {
-            // 控制速率：每 16 个样本更新一次滤波器系数，避免每样本调用 tan()
-            const std::uint32_t n = std::min<std::uint32_t>(16u, frames - i);
-            cutoffNow = cutoffEnd + (cutoffNow - cutoffEnd) * cutoffCoef;
-            filter.setLowpass(cutoffNow, 0.55f, sampleRate);
+            // 调度器可能把块切成任意长度；跨块保留相位，确保每 16 个样本
+            // 才更新一次系数，避免短块加速音色衰减并重复调用 tan()。
+            if (filterFramesRemaining == 0) {
+                cutoffNow = cutoffEnd + (cutoffNow - cutoffEnd) * cutoffCoef;
+                filter.setLowpass(cutoffNow, 0.55f, sampleRate);
+                filterFramesRemaining = 16;
+            }
+            const std::uint32_t n = std::min(filterFramesRemaining, frames - i);
 
             for (std::uint32_t k = 0; k < n; ++k, ++i) {
                 const float e = env.next();
@@ -175,6 +181,7 @@ void Voice::renderAdd(float* out, std::uint32_t frames, float sampleRate) {
                 lastL = l;
                 lastR = r;
             }
+            filterFramesRemaining -= n;
         }
         return;
     }

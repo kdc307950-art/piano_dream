@@ -5,6 +5,7 @@
 // 负责：琴键几何计算、绘制、滚动、命中测试（含按 Y 位置取力度）。
 // 不直接发声，只读取 Mixer 的高亮计数 —— UI 与音频彻底解耦。
 //
+#include <array>
 #include <vector>
 
 #include "raylib.h"
@@ -29,6 +30,7 @@ public:
     void setLayout(const UiLayout& layout);
     void setViewTransform(float scale, Vector2 offset) noexcept { viewScale_ = scale; viewOffset_ = offset; }
     void setKeyboardMap(const KeyboardMap* map) { map_ = map; }
+    void setShowKeyHints(bool show) noexcept { showKeyHints_ = show; }
 
     float scroll() const noexcept { return scrollX_; }
     float contentWidth() const noexcept;
@@ -60,13 +62,16 @@ private:
 
     std::vector<KeyGeom> whites_;
     std::vector<KeyGeom> blacks_;
+    std::array<float, kKeyCount> keyCenters_{};
 
     float scrollX_ = 0.0f;
     float targetScroll_ = 0.0f;
     bool  animating_ = false;
     float geomKeyW_ = 0.0f;
+    float geomBlackW_ = 0.0f;
     float viewScale_ = 1.0f;
     Vector2 viewOffset_{};
+    bool showKeyHints_ = false;
 };
 
 } // namespace piano

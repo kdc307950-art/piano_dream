@@ -43,6 +43,7 @@ struct Voice {
     float       cutoffNow   = 1000.0f;
     float       cutoffEnd   = 800.0f;
     float       cutoffCoef  = 0.999f;   // 每 16 样本更新一次系数时使用
+    std::uint32_t filterFramesRemaining = 0; // 跨渲染块保留控制速率相位
     NoiseGen    noise;
     Svf         hammerFilter;
     float       hammerLevel = 0.0f;

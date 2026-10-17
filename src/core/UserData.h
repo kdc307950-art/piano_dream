@@ -22,10 +22,19 @@ namespace piano {
 
 inline std::filesystem::path userDataDirectory() {
 #ifdef _WIN32
-    wchar_t appData[32768]{};
-    const unsigned long n = GetEnvironmentVariableW(L"APPDATA", appData, 32768);
-    if (n > 0 && n < 32768)
-        return std::filesystem::path(std::wstring(appData, n)) / L"GrandStudioPiano";
+    // APPDATA is the roaming location used by the desktop build. A few
+    // sandboxed or freshly provisioned Windows accounts do not define it, so
+    // fall back to LOCALAPPDATA before using a relative directory.
+    auto envPath = [](const wchar_t* name) -> std::filesystem::path {
+        wchar_t value[32768]{};
+        const unsigned long n = GetEnvironmentVariableW(name, value, 32768);
+        if (n > 0 && n < 32768) return std::filesystem::path(std::wstring(value, n));
+        return {};
+    };
+    for (const wchar_t* name : { L"APPDATA", L"LOCALAPPDATA" }) {
+        const auto base = envPath(name);
+        if (!base.empty()) return base / L"GrandStudioPiano";
+    }
 #elif defined(__APPLE__)
     if (const char* home = std::getenv("HOME")) {
         namespace fs = std::filesystem;
@@ -43,6 +52,9 @@ inline std::filesystem::path userDataDirectory() {
         return modern;
     }
 #else
+    if (const char* dataHome = std::getenv("XDG_DATA_HOME")) {
+        if (*dataHome) return std::filesystem::path(dataHome) / "GrandStudioPiano";
+    }
     if (const char* home = std::getenv("HOME"))
         return std::filesystem::path(home) / ".local" / "share" / "GrandStudioPiano";
 #endif

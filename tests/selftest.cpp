@@ -902,29 +902,30 @@ void testNoteFx() {
         check(!q.pop(ev), "摘除队列后 noteOn 不再推送");
     }
 
-    // 布局兼容性：fxEnabled=false 时输出与引入舞台带之前逐像素一致
+    // 布局契约：三栏首屏、稳定键盘、运输栏与谱面在两种特效状态下对齐
     {
         UiLayout off;
         off.fxEnabled = false;
         off.compute(1520.0f, 1000.0f);
         check(off.fxStage.height == 0.0f && off.fxStage.width == 0.0f,
               "fx 关闭：fxStage 为空矩形");
-        check(off.keys.y == off.rail.y + 30.0f && std::fabs(off.keyH - 300.0f) < 1e-4f,
-              "fx 关闭：琴键位置/高度与旧布局一致");
+        check(std::fabs(off.keys.y - (off.rail.y + 28.0f)) < 1e-4f &&
+              std::fabs(off.keyH - 154.0f) < 1e-4f,
+              "fx 关闭：琴键位置/高度符合新桌面布局");
 
         UiLayout on;
         on.fxEnabled = true;
         on.compute(1520.0f, 1000.0f);
-        check(std::fabs(on.fxStage.height - tk::kStageMaxHeight) < 1e-4f &&
-              on.fxStage.y == on.rail.y + 30.0f,
-              "fx 开启：舞台带位于键盘上方、高度取上限 160");
-        check(std::fabs(on.keys.y - (on.fxStage.y + on.fxStage.height + 8.0f)) < 1e-4f,
-              "fx 开启：琴键下移到舞台带之下");
-        // 关闭态其余几何钉住绝对数值（与引入舞台带之前的公式逐项核对）
-        check(std::fabs(off.controls.y - 156.0f) < 1e-3f && std::fabs(off.rail.y - 228.0f) < 1e-3f &&
-              std::fabs(off.keys.y - 258.0f) < 1e-3f && std::fabs(off.transport.y - 600.0f) < 1e-3f &&
-              std::fabs(off.song.y - 662.0f) < 1e-3f,
-              "fx 关闭：控制行/琴盖/琴键/运输栏/曲目面板位置与旧版逐项一致");
+        check(std::fabs(on.fxStage.height - 26.0f) < 1e-4f &&
+              std::fabs(on.fxStage.y - (on.keys.y - 26.0f)) < 1e-4f,
+              "fx 开启：舞台带位于琴键上方");
+        check(std::fabs(on.keys.y - off.keys.y) < 1e-4f &&
+              std::fabs(on.transport.y - off.transport.y) < 1e-4f,
+              "fx 开启：特效不改变键盘与运输栏位置");
+        check(std::fabs(off.controls.y - 84.0f) < 1e-3f && std::fabs(off.rail.y - 448.0f) < 1e-3f &&
+              std::fabs(off.keys.y - 476.0f) < 1e-3f && std::fabs(off.transport.y - 668.0f) < 1e-3f &&
+              std::fabs(off.song.y - 776.0f) < 1e-3f,
+              "桌面布局：三栏/琴键/运输栏/谱面位置稳定");
     }
 }
 
@@ -1023,6 +1024,7 @@ void testSongLibrary() {
         SongLibrary lib;
         check(lib.load(dir), "a: 空目录 load 成功");
         const SongLibrary::AddResult r = lib.add(src, std::nullopt);
+        if (!r.ok()) std::printf("  [INFO] a: add code=%d message=%s\n", static_cast<int>(r.code), r.message.c_str());
         check(r.ok(), "a: add 成功");
         check(r.noteCount == 2, "a: noteCount == 2");
         idA = r.id;
@@ -1400,8 +1402,18 @@ void testSongLibrary() {
     #else
         const char* oldHome = std::getenv("HOME");
         const std::string oldEnv = oldHome ? oldHome : "";
+        const char* oldXdg = std::getenv("XDG_DATA_HOME");
+        const std::string oldXdgEnv = oldXdg ? oldXdg : "";
+        const bool hadXdg = oldXdg != nullptr;
         auto setEnv = [](const fs::path& p) { setenv("HOME", p.string().c_str(), 1); };
-        auto restoreEnv = [&]() { setenv("HOME", oldEnv.c_str(), 1); };
+        auto restoreEnv = [&]() {
+            setenv("HOME", oldEnv.c_str(), 1);
+            if (hadXdg) setenv("XDG_DATA_HOME", oldXdgEnv.c_str(), 1);
+            else unsetenv("XDG_DATA_HOME");
+        };
+        // The test deliberately controls HOME so it never touches the runner's
+        // real profile. XDG_DATA_HOME must be cleared for the same reason.
+        unsetenv("XDG_DATA_HOME");
     #endif
         const fs::path oldCwd = fs::current_path(ec);
 

@@ -25,7 +25,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 # --------------------------------------------------------------------- 源文件
-file(GLOB_RECURSE PIANO_SOURCES CONFIGURE_DEPENDS
+file(GLOB_RECURSE PIANO_SOURCES
      "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
      "${CMAKE_CURRENT_SOURCE_DIR}/tests/selftest.cpp")
 
@@ -140,6 +140,30 @@ if(NOT PIANO_TSAN)
     set_target_properties(piano piano-cli PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
 endif()
+
+# --------------------------------------------------------------------- 安装/打包
+#
+# 发布构建不应依赖源码目录作为运行目录。安装规则把两个可执行文件、采样目录和许可证一起放入一个自包含目录，CPack 默认再提供 ZIP 包，方便
+# 后续接入安装器或 CI 制品发布。
+include(GNUInstallDirs)
+install(TARGETS piano piano-cli
+        RUNTIME DESTINATION .)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/assets")
+    install(DIRECTORY assets DESTINATION .)
+endif()
+install(FILES README.md THIRD_PARTY_LICENSES.md DESTINATION .)
+
+set(CPACK_PACKAGE_NAME "GrandStudioPiano")
+set(CPACK_PACKAGE_VENDOR "Grand Studio")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "C++ 88-key piano simulator")
+set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+set(CPACK_PACKAGE_INSTALL_DIRECTORY "GrandStudioPiano")
+set(CPACK_NSIS_DISPLAY_NAME "Grand Studio Piano")
+set(CPACK_NSIS_PACKAGE_NAME "Grand Studio Piano")
+set(CPACK_NSIS_CONTACT "Grand Studio")
+set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
+set(CPACK_GENERATOR "ZIP")
+include(CPack)
 
 enable_testing()
 add_test(NAME piano_selftest COMMAND piano-cli --selftest)

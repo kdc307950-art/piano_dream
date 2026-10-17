@@ -1,7 +1,7 @@
 # 钢琴采样目录
 
 把钢琴采样文件放进这个目录，程序启动时会自动扫描加载；
-没有文件时自动使用内置的离线合成音色，不影响使用。
+目录内已内置 FreePats Kawai Upright Piano 的 CC0 FLAC 真实录音；如果采样缺失或解码失败，程序自动使用内置的离线合成音色。
 
 ## 命名规则
 
@@ -27,21 +27,24 @@ Piano_C4_1.wav   前后带前缀后缀也能识别
 
 ## 关于许可
 
-本工程**刻意不附带任何采样文件**。开源钢琴采样库（Salamander Grand Piano、
-Iowa 钢琴采样、University of Iowa MIS 等）的许可证各不相同，
-有的要求署名、有的限制商用、有的禁止再分发。
+当前随包采样来自 [FreePats Upright Piano KW](https://github.com/freepats/upright-piano-KW)，
+录制对象为 Kawai 立式钢琴，发布许可为 CC0 1.0。来源元数据与许可证副本见：
 
-**公开发布或商用前，请自行确认所用采样库的许可证。**
+- `FREEPATS_SOURCE.json`
+- `FREEPATS_CC0_LICENSE.txt`
+- `FREEPATS_README.md`
+
+公开发布时请保留上述来源文件，便于追溯资源版本。
+文件名中的 `vL` / `vH` 分别对应低、高力度层，程序会根据实际演奏力度选择更接近的录音层。
 
 ## 建议的采样库
 
 | 名称 | 特点 | 许可 |
 |---|---|---|
+| FreePats Upright Piano KW | 当前内置，真实立式钢琴录音 | CC0 1.0 |
 | Salamander Grand Piano | 音质好，锚点密集（每 3 个半音） | CC-BY 3.0（需署名） |
-| Ivy Audio Piano in 162 | 轻量，适合打包 | 需查看其条款 |
-| University of Iowa MIS | 学术用途常见 | 需查看其条款 |
 
-下载后重命名成上面的规则即可，例如：
+替换或增加其他采样时，重命名成上面的规则即可，例如：
 
 ```
 C1.wav  Ds1.wav  Fs1.wav  A1.wav  C2.wav  ...
